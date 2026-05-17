@@ -1,0 +1,21 @@
+import Foundation
+
+/// Copy this file to `Config.swift` and fill in your values.
+/// `Config.swift` is gitignored — your real keys never leave your machine.
+///
+/// IMPORTANT: only the *anon* key goes here. NEVER ship the service_role key
+/// in a client app — it bypasses Row Level Security.
+///
+/// In Xcode Cloud, these values are injected by `ci_scripts/ci_post_clone.sh`
+/// from secret environment variables set in App Store Connect.
+enum Config {
+    static let supabaseURL = URL(string: "https://YOUR-PROJECT-REF.supabase.co")!
+    static let supabaseAnonKey = "YOUR-ANON-KEY"
+
+    /// Bucket name created in the Supabase Storage UI. Must match storage_policies.sql.
+    static let storageBucket = "recordings"
+
+    /// Audio segment length on disk. Short segments = smaller loss window if the
+    /// OS kills the app, larger uploads if we ever switch to chunked upload.
+    static let audioSegmentSeconds: TimeInterval = 30
+}

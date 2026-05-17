@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Microphone permission. Required string is shown in the iOS permission prompt. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>TranscriptionAPPMVP records your voice so it can be transcribed. Audio stays private to your account.</string>
+
+    <!-- Background mode: keeps AVAudioRecorder running when the app is backgrounded
+         (e.g. the user opens Google Maps mid-recording). Without this, iOS suspends
+         the app after ~5 seconds in the background and the recording stops. -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>audio</string>
+        <string>fetch</string>
+        <string>processing</string>
+    </array>
+
+    <!-- Prevent the device from sleeping while we're actively recording.
+         (We toggle UIApplication.shared.isIdleTimerDisabled in code; this key
+         isn't strictly required but documents the intent.) -->
+
+    <!-- HTTPS only -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+    </dict>
+</dict>
+</plist>

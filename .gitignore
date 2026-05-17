@@ -1,0 +1,64 @@
+# --- Secrets (NEVER commit) ---
+# Config.swift holds the Supabase URL + anon key. The repo ships Config.swift.example;
+# each contributor copies it to Config.swift and fills in their own values.
+ios/TranscriptionAPPMVP/Config.swift
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# --- Xcode ---
+## User-specific
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
+
+## Build products
+build/
+DerivedData/
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+## Other Xcode noise
+*.hmap
+*.xccheckout
+*.moved-aside
+*.xcscmblueprint
+
+## Workspace shared state we don't want
+*.xcworkspace/xcuserdata/
+
+# --- Swift Package Manager ---
+.swiftpm/
+.build/
+Packages/
+Package.resolved
+
+# --- CocoaPods (if you ever add it) ---
+Pods/
+
+# --- Carthage (if you ever add it) ---
+Carthage/Build/
+
+# --- fastlane ---
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# --- Supabase CLI (local state) ---
+supabase/.branches/
+supabase/.temp/
+.env
+.env.local
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.swp
+*~
+
+# --- Misc ---
+*.log
