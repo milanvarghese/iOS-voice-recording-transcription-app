@@ -26,7 +26,7 @@ struct TranscriptionAPPMVPApp: App {
             try session.setCategory(
                 .playAndRecord,
                 mode: .spokenAudio,
-                options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
+                options: [.defaultToSpeaker, .allowBluetoothA2DP]
             )
             try session.setActive(true, options: [])
         } catch {

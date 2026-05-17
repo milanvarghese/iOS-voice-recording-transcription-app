@@ -92,7 +92,7 @@ final class SupabaseService: ObservableObject {
 
     func deleteRecording(id: UUID, storagePath: String?) async throws {
         if let storagePath {
-            try? await client.storage
+            _ = try? await client.storage
                 .from(Config.storageBucket)
                 .remove(paths: [storagePath])
         }
@@ -121,8 +121,8 @@ final class SupabaseService: ObservableObject {
         _ = try await client.storage
             .from(Config.storageBucket)
             .upload(
-                path: storagePath,
-                file: data,
+                storagePath,
+                data: data,
                 options: FileOptions(
                     contentType: "audio/m4a",
                     upsert: true

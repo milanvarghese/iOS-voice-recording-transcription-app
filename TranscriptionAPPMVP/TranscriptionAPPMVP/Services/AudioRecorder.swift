@@ -153,11 +153,10 @@ final class AudioRecorder: NSObject, ObservableObject {
     /// (Concern #5: "recording in progress but timer at zero".)
     private func startMetering() {
         levelTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self, let recorder = self.recorder else { return }
                 recorder.updateMeters()
                 let db = recorder.averagePower(forChannel: 0)
-                // Map -60dB...0dB to 0...1 with simple linear scaling
                 let normalized = max(0, (db + 60) / 60)
                 self.audioLevel = normalized
                 self.elapsedSeconds = recorder.currentTime

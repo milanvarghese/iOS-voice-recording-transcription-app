@@ -37,8 +37,13 @@ final class HistoryViewModel: ObservableObject {
             table: "recordings"
         )
 
-        await channel.subscribe()
-        self.realtimeChannel = channel
+        do {
+            try await channel.subscribeWithError()
+            self.realtimeChannel = channel
+        } catch {
+            errorMessage = "Realtime subscription failed: \(error.localizedDescription)"
+            return
+        }
 
         Task {
             for await _ in changes {
