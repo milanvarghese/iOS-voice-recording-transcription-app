@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// A persistent FIFO queue of pending uploads.

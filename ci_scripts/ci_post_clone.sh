@@ -24,7 +24,7 @@ fi
 
 # CI_PRIMARY_REPOSITORY_PATH is set by Xcode Cloud and points at the repo root.
 REPO_ROOT="${CI_PRIMARY_REPOSITORY_PATH:-$(cd "$(dirname "$0")/.." && pwd)}"
-CONFIG_PATH="$REPO_ROOT/ios/TranscriptionAPPMVP/Config.swift"
+CONFIG_PATH="$REPO_ROOT/TranscriptionAPPMVP/TranscriptionAPPMVP/Config.swift"
 
 cat > "$CONFIG_PATH" <<EOF
 import Foundation

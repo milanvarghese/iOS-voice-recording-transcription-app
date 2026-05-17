@@ -1,7 +1,7 @@
 # --- Secrets (NEVER commit) ---
 # Config.swift holds the Supabase URL + anon key. The repo ships Config.swift.example;
 # each contributor copies it to Config.swift and fills in their own values.
-ios/TranscriptionAPPMVP/Config.swift
+TranscriptionAPPMVP/TranscriptionAPPMVP/Config.swift
 
 # --- macOS ---
 .DS_Store
@@ -34,7 +34,7 @@ DerivedData/
 .swiftpm/
 .build/
 Packages/
-Package.resolved
+# Package.resolved: committed on purpose for app projects so CI uses identical versions.
 
 # --- CocoaPods (if you ever add it) ---
 Pods/
