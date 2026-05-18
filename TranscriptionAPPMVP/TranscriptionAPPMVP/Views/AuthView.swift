@@ -7,44 +7,62 @@ struct AuthView: View {
     @FocusState private var emailFocused: Bool
     @FocusState private var codeFocused: Bool
 
+    // Locked color values so the screen never inverts under system dark mode.
+    private let bgTop = Color(red: 0.06, green: 0.08, blue: 0.14)
+    private let bgBottom = Color(red: 0.10, green: 0.05, blue: 0.18)
+    private let inputBackground = Color(red: 0.14, green: 0.16, blue: 0.22)
+    private let inputBorder = Color.white.opacity(0.12)
+    private let inputBorderActive = Color(red: 0.55, green: 0.45, blue: 1.00)
+    private let primaryText = Color(red: 0.96, green: 0.97, blue: 1.00)
+    private let secondaryText = Color(red: 0.65, green: 0.69, blue: 0.80)
+    private let tertiaryText = Color(red: 0.45, green: 0.48, blue: 0.58)
+    private let accentStart = Color(red: 0.42, green: 0.45, blue: 1.00)
+    private let accentEnd = Color(red: 0.78, green: 0.40, blue: 1.00)
+
     var body: some View {
         ZStack {
-            // Soft accent gradient background. Subtle, not distracting.
             LinearGradient(
-                colors: [
-                    Color(red: 0.95, green: 0.96, blue: 1.00),
-                    Color(red: 0.88, green: 0.91, blue: 0.98)
-                ],
+                colors: [bgTop, bgBottom],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            // Faint radial highlight to add depth without affecting contrast.
+            RadialGradient(
+                colors: [Color.white.opacity(0.06), Color.clear],
+                center: .top,
+                startRadius: 0,
+                endRadius: 320
             )
             .ignoresSafeArea()
 
             VStack {
                 Spacer()
 
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     Image(systemName: "waveform.circle.fill")
                         .font(.system(size: 84, weight: .light))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [.accentColor, .purple],
+                                colors: [accentStart, accentEnd],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .shadow(color: .accentColor.opacity(0.25), radius: 16, x: 0, y: 8)
-                        .padding(.bottom, 12)
+                        .shadow(color: accentEnd.opacity(0.35), radius: 18, x: 0, y: 8)
+                        .padding(.bottom, 8)
 
                     Text("TranscriptionAPPMVP")
                         .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                        .foregroundStyle(primaryText)
                         .multilineTextAlignment(.center)
 
                     Text("Record. Transcribe. Extract.")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(secondaryText)
                 }
-                .padding(.bottom, 36)
+                .padding(.bottom, 40)
 
                 Group {
                     switch auth.state {
@@ -75,18 +93,18 @@ struct AuthView: View {
                 VStack(spacing: 2) {
                     Text("Developed by Milan Varghese")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(tertiaryText)
                     Text("milanvarghese99@gmail.com")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(tertiaryText)
                 }
-                .padding(.bottom, 16)
+                .padding(.bottom, 20)
             }
             .padding(.horizontal, 28)
         }
+        .preferredColorScheme(.dark)   // keep keyboard/cursor tinting consistent
     }
 
-    /// Drives the slide/fade transition between the email and OTP cards.
     private var stateID: String {
         switch auth.state {
         case .signedOut, .loading: return "email"
@@ -99,46 +117,28 @@ struct AuthView: View {
         VStack(spacing: 14) {
             Text("Sign in with your email")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryText)
 
-            TextField("you@example.com", text: $email)
+            TextField("", text: $email, prompt: Text("you@example.com").foregroundColor(tertiaryText))
                 .keyboardType(.emailAddress)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .focused($emailFocused)
+                .foregroundStyle(primaryText)
+                .tint(accentEnd)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
+                .background(inputBackground, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(emailFocused ? Color.accentColor : Color.black.opacity(0.08),
+                        .strokeBorder(emailFocused ? inputBorderActive : inputBorder,
                                       lineWidth: emailFocused ? 1.5 : 1)
                 )
                 .submitLabel(.send)
                 .onSubmit { send() }
 
-            Button(action: send) {
-                HStack {
-                    if auth.isWorking {
-                        ProgressView().tint(.white)
-                    } else {
-                        Text("Send code").fontWeight(.semibold)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    LinearGradient(
-                        colors: [.accentColor, .accentColor.opacity(0.85)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    in: RoundedRectangle(cornerRadius: 12)
-                )
-                .foregroundStyle(.white)
-                .shadow(color: .accentColor.opacity(0.3), radius: 10, x: 0, y: 4)
-            }
-            .disabled(auth.isWorking || email.trimmingCharacters(in: .whitespaces).isEmpty)
+            primaryButton(title: "Send code", action: send,
+                          enabled: !auth.isWorking && !email.trimmingCharacters(in: .whitespaces).isEmpty)
         }
     }
 
@@ -147,75 +147,81 @@ struct AuthView: View {
             VStack(spacing: 4) {
                 Text("Check your email")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(secondaryText)
                 Text(email)
                     .font(.callout.weight(.medium))
+                    .foregroundStyle(primaryText)
             }
 
-            TextField("123456", text: $code)
+            TextField("", text: $code, prompt: Text("123456").foregroundColor(tertiaryText))
                 .keyboardType(.numberPad)
                 .font(.system(.title2, design: .monospaced).weight(.semibold))
                 .multilineTextAlignment(.center)
                 .focused($codeFocused)
+                .foregroundStyle(primaryText)
+                .tint(accentEnd)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
+                .background(inputBackground, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(codeFocused ? Color.accentColor : Color.black.opacity(0.08),
+                        .strokeBorder(codeFocused ? inputBorderActive : inputBorder,
                                       lineWidth: codeFocused ? 1.5 : 1)
                 )
 
-            Button(action: verify) {
-                HStack {
-                    if auth.isWorking {
-                        ProgressView().tint(.white)
-                    } else {
-                        Text("Verify").fontWeight(.semibold)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    LinearGradient(
-                        colors: [.accentColor, .accentColor.opacity(0.85)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    in: RoundedRectangle(cornerRadius: 12)
-                )
-                .foregroundStyle(.white)
-                .shadow(color: .accentColor.opacity(0.3), radius: 10, x: 0, y: 4)
-            }
-            .disabled(auth.isWorking || code.count < 6)
+            primaryButton(title: "Verify", action: verify,
+                          enabled: !auth.isWorking && code.count >= 6)
 
             HStack {
                 Button("Resend code") {
                     Task { await auth.resendCode() }
                 }
+                .foregroundStyle(secondaryText)
                 Spacer()
                 Button("Change email") {
                     code = ""
-                    Task { await auth.signOut() }   // returns us to .signedOut
+                    Task { await auth.signOut() }
                 }
+                .foregroundStyle(secondaryText)
             }
             .font(.footnote)
             .padding(.top, 4)
         }
-        .onAppear {
-            codeFocused = true
+        .onAppear { codeFocused = true }
+    }
+
+    @ViewBuilder
+    private func primaryButton(title: String, action: @escaping () -> Void, enabled: Bool) -> some View {
+        Button(action: action) {
+            HStack {
+                if auth.isWorking {
+                    ProgressView().tint(.white)
+                } else {
+                    Text(title).fontWeight(.semibold)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(
+                LinearGradient(
+                    colors: [accentStart, accentEnd],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                in: RoundedRectangle(cornerRadius: 12)
+            )
+            .foregroundStyle(.white)
+            .shadow(color: accentEnd.opacity(0.4), radius: 12, x: 0, y: 6)
+            .opacity(enabled ? 1.0 : 0.5)
         }
+        .disabled(!enabled)
     }
 
     private func send() {
-        Task {
-            await auth.sendCode(to: email.trimmingCharacters(in: .whitespaces))
-        }
+        Task { await auth.sendCode(to: email.trimmingCharacters(in: .whitespaces)) }
     }
 
     private func verify() {
-        Task {
-            await auth.verify(code: code.trimmingCharacters(in: .whitespaces))
-        }
+        Task { await auth.verify(code: code.trimmingCharacters(in: .whitespaces)) }
     }
 }
