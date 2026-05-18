@@ -79,7 +79,9 @@ Deno.serve(async (req) => {
       webhook_url: `${WEBHOOK_URL}?recording_id=${recording.id}`,
       webhook_auth_header_name: "x-webhook-secret",
       webhook_auth_header_value: WEBHOOK_SECRET,
-      // Useful defaults — turn on/off based on your needs:
+      // AssemblyAI now requires speech_models. universal-2 is the cheaper option;
+      // swap to universal-3-pro if you need higher accuracy.
+      speech_models: ["universal-2"],
       speaker_labels: true,
       punctuate: true,
       format_text: true,
