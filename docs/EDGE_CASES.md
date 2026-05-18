@@ -29,6 +29,22 @@ Mapping each concern Milan flagged to the specific mechanism in this codebase. A
 | 5 | Webhook security | `assemblyai_webhook` is deployed with `--no-verify-jwt` (AssemblyAI doesn't have a Supabase JWT to send). Authentication is via the `x-webhook-secret` header which AssemblyAI echoes back to us; we compare against `WEBHOOK_SECRET` |
 | 6 | RLS mismatch between table and Storage | `recordings` table RLS compares UUIDs (normalized to lowercase by Postgres). Storage RLS compares the first folder of `name` to `auth.uid()::text` (also lowercase). iOS builds storage paths with `userId.uuidString.lowercased()` so the string comparison passes |
 
+## Long-form audio and transcripts
+
+This is the dimension the app was designed for — recordings minutes to hours long, transcripts that get correspondingly large. A few places where length matters and what protects them today:
+
+| Concern | What protects us | Where |
+|---------|------------------|-------|
+| 3-hour M4A loaded into RAM at upload time | `Data(contentsOf:, options: [.mappedIfSafe])` memory-maps the file. The kernel pages bytes in as the upload reads them; the iOS process never holds the full file in heap | `SupabaseService.uploadAudio` |
+| Multi-hour transcript exceeds Claude's context | Claude Sonnet 4.6 has a ~200k-token context window. A 3-hour transcript is ~25k tokens — well inside the window. Chunking only becomes necessary past ~10 hours of speech | `extract_fields/index.ts` |
+| Long extracted JSON gets truncated by `max_tokens` | We use `max_tokens: 4096`, which fits a thorough meeting (30+ action items, attendees, decisions, etc.) without truncation. Bump if you start seeing cut-off JSON | `extract_fields/index.ts` |
+| AssemblyAI signed URL expires before transcription | Signed URLs are issued for 24 hours. AssemblyAI typically processes within ~30% of audio duration; even an 8-hour file is comfortably within the window | `submit_for_transcription/index.ts` |
+| Upload retry on flaky network mid-multi-GB file | supabase-swift's storage upload uses TUS resumable upload for files >6MB. Network drop resumes from the last completed byte rather than restarting | `SupabaseService.uploadAudio` |
+| Playback of a 3-hour M4A on the phone | `AVAudioPlayer` decodes on demand; nothing is held in memory beyond a buffer. The scrubber is bound to `currentTime` so seek is constant-time | `AudioPlayerViewModel` |
+| Realtime row update size | We don't push the audio over Realtime — only the row metadata (transcript text included). For a 3-hour transcript (~150 KB text) Realtime handles it fine; the only large field that does not get pushed is the underlying `transcript_json` which stays in the DB | Supabase Realtime publication on `recordings` |
+
+If you do start handling extremely long content (10+ hours), the next moves would be: chunk the transcript before sending to Claude (split on speaker boundaries, summarize per chunk, then merge), and switch the iOS upload to a background `URLSession` so the OS can keep it running past the foreground time limit. Both are noted in the deferred list below.
+
 ## Auth / scaling
 
 - **OTP rate limits**: Supabase's default email sender is rate-limited and unsuitable for >50 users/day. For scaling, switch to custom SMTP (Resend / SendGrid / Postmark) in Auth settings. This is a config change, not a code change.

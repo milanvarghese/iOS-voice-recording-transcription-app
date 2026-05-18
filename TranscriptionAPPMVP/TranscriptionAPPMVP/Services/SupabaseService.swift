@@ -125,8 +125,10 @@ final class SupabaseService: ObservableObject {
 
     /// Upload an audio file. supabase-swift uses resumable upload under the hood
     /// for files >6MB, which matters for hour-long recordings.
+    /// Uses memory-mapped file reading so a multi-hour M4A doesn't load its
+    /// entire byte length into RAM at once.
     func uploadAudio(localURL: URL, storagePath: String) async throws {
-        let data = try Data(contentsOf: localURL)
+        let data = try Data(contentsOf: localURL, options: [.mappedIfSafe])
         _ = try await client.storage
             .from(Config.storageBucket)
             .upload(

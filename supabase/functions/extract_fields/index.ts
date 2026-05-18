@@ -101,7 +101,10 @@ Deno.serve(async (req) => {
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
-      max_tokens: 2048,
+      // 4096 leaves room for long-form output: a multi-hour meeting can
+      // legitimately produce 30+ action items + attendees + decisions, which
+      // exceeds 2048 tokens fast.
+      max_tokens: 4096,
       system: [
         {
           type: "text",

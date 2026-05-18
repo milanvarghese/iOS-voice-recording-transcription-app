@@ -31,6 +31,12 @@ struct MainTabView: View {
 struct SettingsView: View {
     @EnvironmentObject var auth: AuthViewModel
 
+    private var appVersion: String {
+        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let b = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+        return "\(v) (\(b))"
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -39,6 +45,34 @@ struct SettingsView: View {
                         Task { await auth.signOut() }
                     } label: {
                         Text("Sign out")
+                    }
+                }
+
+                Section("About") {
+                    HStack {
+                        Text("App")
+                        Spacer()
+                        Text("TranscriptionAPPMVP").foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        Text("Version")
+                        Spacer()
+                        Text(appVersion).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                    HStack {
+                        Text("Developed by")
+                        Spacer()
+                        Text("Milan Varghese").foregroundStyle(.secondary)
+                    }
+                    if let url = URL(string: "mailto:milanvarghese99@gmail.com") {
+                        Link(destination: url) {
+                            HStack {
+                                Text("Contact").foregroundStyle(.primary)
+                                Spacer()
+                                Text("milanvarghese99@gmail.com").foregroundStyle(.secondary)
+                                Image(systemName: "envelope").foregroundStyle(.secondary).font(.footnote)
+                            }
+                        }
                     }
                 }
             }

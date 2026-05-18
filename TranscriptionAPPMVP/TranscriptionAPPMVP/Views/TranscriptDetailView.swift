@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import Combine
+import UIKit
 
 @MainActor
 final class AudioPlayerViewModel: ObservableObject {
@@ -205,7 +206,11 @@ struct TranscriptDetailView: View {
         Divider()
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Extracted Fields").font(.headline)
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(Color(red: 0.65, green: 0.4, blue: 1.0))
+                    Text("Extracted Fields").font(.headline)
+                }
                 Spacer()
                 Button {
                     Task { await runExtraction() }
@@ -213,25 +218,18 @@ struct TranscriptDetailView: View {
                     if isExtracting {
                         ProgressView()
                     } else {
-                        Image(systemName: recording.extractedFields == nil ? "sparkles" : "arrow.clockwise")
+                        Image(systemName: recording.extractedFields == nil ? "wand.and.stars" : "arrow.clockwise")
                     }
                 }
                 .disabled(isExtracting)
                 .accessibilityLabel(recording.extractedFields == nil ? "Extract fields" : "Re-extract fields")
             }
             if let fields = recording.extractedFields {
-                Text(fields.prettyPrinted())
-                    .font(.system(.footnote, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                CodeBlockView(json: fields.prettyPrinted())
             } else if isExtracting {
-                Text("Extracting…")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                CodeBlockView(json: "{\n  \"status\": \"extracting…\"\n}")
             } else {
-                Text("No fields extracted yet. Tap the sparkle icon to run extraction.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                CodeBlockView(json: "{\n  \"hint\": \"Tap the wand icon to run extraction.\"\n}")
             }
             if let err = extractError {
                 Text(err).font(.footnote).foregroundStyle(.red)
@@ -310,5 +308,75 @@ struct TranscriptDetailView: View {
         let s = seconds % 60
         if h > 0 { return String(format: "%dh %dm", h, m) }
         return String(format: "%dm %ds", m, s)
+    }
+}
+
+/// Dark code-editor style block for pretty-printed JSON, with simple syntax
+/// highlighting (keys, strings, numbers, booleans / null).
+private struct CodeBlockView: View {
+    let json: String
+
+    var body: some View {
+        Text(highlight(json))
+            .font(.system(.footnote, design: .monospaced))
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.08, green: 0.09, blue: 0.12),
+                        Color(red: 0.05, green: 0.06, blue: 0.09)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                in: RoundedRectangle(cornerRadius: 10)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+            )
+    }
+
+    /// Color palette is loosely inspired by VSCode's dark+ theme.
+    private func highlight(_ text: String) -> AttributedString {
+        let mutable = NSMutableAttributedString(string: text)
+        let full = NSRange(location: 0, length: (text as NSString).length)
+
+        let baseColor = UIColor(red: 0.86, green: 0.87, blue: 0.92, alpha: 1)
+        let keyColor = UIColor(red: 0.40, green: 0.78, blue: 1.00, alpha: 1)
+        let stringColor = UIColor(red: 0.96, green: 0.73, blue: 0.49, alpha: 1)
+        let numberColor = UIColor(red: 0.62, green: 0.92, blue: 0.55, alpha: 1)
+        let boolColor = UIColor(red: 0.85, green: 0.55, blue: 1.00, alpha: 1)
+        let punctColor = UIColor(red: 0.55, green: 0.57, blue: 0.65, alpha: 1)
+
+        mutable.addAttribute(.foregroundColor, value: baseColor, range: full)
+
+        // Order matters: keys override generic-string color where they overlap.
+        let stringPattern = #""[^"\\]*(?:\\.[^"\\]*)*""#
+        apply(stringPattern, in: mutable, range: full, color: stringColor)
+
+        let keyPattern = #""[^"\\]*(?:\\.[^"\\]*)*"(?=\s*:)"#
+        apply(keyPattern, in: mutable, range: full, color: keyColor)
+
+        let numberPattern = #"(?<![\w."])-?\d+(?:\.\d+)?(?![\w."])"#
+        apply(numberPattern, in: mutable, range: full, color: numberColor)
+
+        let boolPattern = #"\b(true|false|null)\b"#
+        apply(boolPattern, in: mutable, range: full, color: boolColor)
+
+        let punctPattern = #"[\{\}\[\]:,]"#
+        apply(punctPattern, in: mutable, range: full, color: punctColor)
+
+        return AttributedString(mutable)
+    }
+
+    private func apply(_ pattern: String, in attr: NSMutableAttributedString, range: NSRange, color: UIColor) {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
+        regex.enumerateMatches(in: attr.string, range: range) { match, _, _ in
+            guard let r = match?.range else { return }
+            attr.addAttribute(.foregroundColor, value: color, range: r)
+        }
     }
 }
