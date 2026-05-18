@@ -147,6 +147,8 @@ struct TranscriptDetailView: View {
     @StateObject private var player = AudioPlayerViewModel()
     @State private var isRetrying = false
     @State private var retryError: String?
+    @State private var isExtracting = false
+    @State private var extractError: String?
 
     var body: some View {
         ScrollView {
@@ -173,6 +175,7 @@ struct TranscriptDetailView: View {
                     } else {
                         Text("Transcript is empty.").foregroundStyle(.secondary)
                     }
+                    extractedFieldsSection
                 case .transcribing, .uploaded, .uploading:
                     ProgressView("Transcribing…")
                         .frame(maxWidth: .infinity)
@@ -195,6 +198,57 @@ struct TranscriptDetailView: View {
 
     private var hasPlayableAudio: Bool {
         AudioRecorder.localAudioURL(for: recording.id) != nil || recording.storagePath != nil
+    }
+
+    @ViewBuilder
+    private var extractedFieldsSection: some View {
+        Divider()
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Extracted Fields").font(.headline)
+                Spacer()
+                Button {
+                    Task { await runExtraction() }
+                } label: {
+                    if isExtracting {
+                        ProgressView()
+                    } else {
+                        Image(systemName: recording.extractedFields == nil ? "sparkles" : "arrow.clockwise")
+                    }
+                }
+                .disabled(isExtracting)
+                .accessibilityLabel(recording.extractedFields == nil ? "Extract fields" : "Re-extract fields")
+            }
+            if let fields = recording.extractedFields {
+                Text(fields.prettyPrinted())
+                    .font(.system(.footnote, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if isExtracting {
+                Text("Extracting…")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("No fields extracted yet. Tap the sparkle icon to run extraction.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if let err = extractError {
+                Text(err).font(.footnote).foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func runExtraction() async {
+        isExtracting = true
+        extractError = nil
+        defer { isExtracting = false }
+        do {
+            try await SupabaseService.shared.extractFields(recordingId: recording.id)
+            // Realtime push will refresh the row; nothing else needed here.
+        } catch {
+            extractError = "Extraction failed: \(error.localizedDescription)"
+        }
     }
 
     @ViewBuilder

@@ -149,6 +149,17 @@ final class SupabaseService: ObservableObject {
             options: .init(body: Body(recording_id: recordingId.uuidString))
         )
     }
+
+    /// Re-runs Claude-based field extraction on a transcript that already
+    /// exists. The webhook chains this automatically once a transcript lands;
+    /// iOS calls it from the detail view for manual re-extraction.
+    func extractFields(recordingId: UUID) async throws {
+        struct Body: Encodable { let recording_id: String }
+        try await client.functions.invoke(
+            "extract_fields",
+            options: .init(body: Body(recording_id: recordingId.uuidString))
+        )
+    }
 }
 
 /// Stub — supabase-swift provides default in-memory storage for sessions.

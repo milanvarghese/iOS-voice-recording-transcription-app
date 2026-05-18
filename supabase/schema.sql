@@ -21,6 +21,7 @@ create table public.recordings (
   assemblyai_id     text,                  -- AssemblyAI job id, set when submitted
   transcript        text,                  -- full text, set on completion
   transcript_json   jsonb,                 -- structured transcript (words, timestamps)
+  extracted_fields  jsonb,                 -- AI-extracted structured fields (Claude)
   error_message     text,
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()

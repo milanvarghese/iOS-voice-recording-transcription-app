@@ -67,15 +67,35 @@ Deno.serve(async (req) => {
   }
   const tx = await txResp.json();
 
-  // 3. Write the result.
+  // 3. Write the transcript result.
   await supabase.from("recordings").update({
     status: "done",
     transcript: tx.text ?? "",
     transcript_json: tx,        // includes words[], speaker labels, timestamps
   }).eq("id", recordingId);
 
-  // The iOS app's Realtime subscription will pick this up automatically.
-  // (You can add APNs push here later — see docs/TESTFLIGHT.md.)
+  // 4. Chain to extract_fields so Claude pulls structured info from the
+  //    transcript. We await so failures get logged, but the webhook still
+  //    returns ok regardless — extraction failure is not a transcription
+  //    failure. iOS can manually re-trigger from the detail view.
+  try {
+    const extractResp = await fetch(`${SUPABASE_URL}/functions/v1/extract_fields`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ recording_id: recordingId }),
+    });
+    if (!extractResp.ok) {
+      console.error(`extract_fields chain failed: ${extractResp.status} ${await extractResp.text()}`);
+    }
+  } catch (err) {
+    console.error("extract_fields chain threw:", err);
+  }
+
+  // The iOS app's Realtime subscription will pick up both the transcript
+  // and the extracted_fields update.
 
   return new Response("ok");
 });
