@@ -127,9 +127,9 @@ final class UploadQueue: ObservableObject {
             id: item.id, status: .transcribing
         )
 
-        // 5. Clean up the local file. (Comment this out if you want offline
-        //    playback before the transcript is ready.)
-        try? FileManager.default.removeItem(at: item.localFileURL)
+        // Keep the local file. The user can play it back instantly without
+        // re-downloading, and it stays on the phone until they swipe-delete
+        // the recording in History (HistoryViewModel.delete also removes it).
     }
 
     // MARK: - Persistence

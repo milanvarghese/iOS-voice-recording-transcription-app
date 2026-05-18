@@ -228,6 +228,19 @@ final class AudioRecorder: NSObject, ObservableObject {
         return dir
     }
 
+    /// Returns the on-disk URL for a recording's audio file, or nil if it isn't there.
+    /// The file lives at recordingsDirectory()/<UUID-uppercase>.m4a.
+    static func localAudioURL(for recordingId: UUID) -> URL? {
+        let url = recordingsDirectory().appendingPathComponent("\(recordingId.uuidString).m4a")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Delete the local audio file for a recording. No-op if it doesn't exist.
+    static func deleteLocalAudio(for recordingId: UUID) {
+        let url = recordingsDirectory().appendingPathComponent("\(recordingId.uuidString).m4a")
+        try? FileManager.default.removeItem(at: url)
+    }
+
     private func defaultTitle() -> String {
         let f = DateFormatter()
         f.dateFormat = "MMM d, h:mm a"

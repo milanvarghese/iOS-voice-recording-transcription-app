@@ -114,6 +114,15 @@ final class SupabaseService: ObservableObject {
 
     // MARK: - Storage
 
+    /// A 1-hour signed URL for a private audio file. Used when the local copy
+    /// isn't on the phone (fresh install, switched devices) so playback can
+    /// stream from Supabase Storage.
+    func signedAudioURL(storagePath: String) async throws -> URL {
+        try await client.storage
+            .from(Config.storageBucket)
+            .createSignedURL(path: storagePath, expiresIn: 60 * 60)
+    }
+
     /// Upload an audio file. supabase-swift uses resumable upload under the hood
     /// for files >6MB, which matters for hour-long recordings.
     func uploadAudio(localURL: URL, storagePath: String) async throws {

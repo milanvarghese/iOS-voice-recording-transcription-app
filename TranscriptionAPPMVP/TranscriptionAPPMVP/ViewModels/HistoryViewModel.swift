@@ -67,9 +67,35 @@ final class HistoryViewModel: ObservableObject {
                 id: recording.id,
                 storagePath: recording.storagePath
             )
+            AudioRecorder.deleteLocalAudio(for: recording.id)
             recordings.removeAll { $0.id == recording.id }
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Retry transcription for a failed recording. Only valid when the audio
+    /// already made it to Supabase Storage (recording.storagePath != nil).
+    func retryTranscription(_ recording: Recording) async {
+        guard recording.storagePath != nil else {
+            errorMessage = "Can't retry: audio was never uploaded."
+            return
+        }
+        do {
+            try await SupabaseService.shared.updateRecording(
+                id: recording.id, status: .uploaded
+            )
+            try await SupabaseService.shared.submitForTranscription(recordingId: recording.id)
+            try await SupabaseService.shared.updateRecording(
+                id: recording.id, status: .transcribing
+            )
+        } catch {
+            errorMessage = "Retry failed: \(error.localizedDescription)"
+            try? await SupabaseService.shared.updateRecording(
+                id: recording.id,
+                status: .failed,
+                errorMessage: error.localizedDescription
+            )
         }
     }
 }
