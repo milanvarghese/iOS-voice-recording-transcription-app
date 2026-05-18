@@ -9,15 +9,22 @@ struct RecordingView: View {
             VStack(spacing: 32) {
                 Spacer()
 
-                // Big timer — bound to the actual recorder.currentTime, never a separate counter.
+                // Status pill — only visible during a recording session so the
+                // user always knows whether they're capturing audio or paused.
+                if vm.isRecording {
+                    statusBadge
+                }
+
+                // Big timer — bound to AVAudioRecorder.currentTime, never a
+                // separate counter. Color shifts to a muted gray when paused
+                // so it's obvious nothing is being captured.
                 Text(formatDuration(vm.elapsedSeconds))
                     .font(.system(size: 64, weight: .light, design: .rounded))
                     .monospacedDigit()
-                    .foregroundStyle(vm.isRecording ? .red : .primary)
+                    .foregroundStyle(timerColor)
+                    .animation(.easeInOut(duration: 0.15), value: vm.isPaused)
 
-                // Live audio level meter (a simple bar). Gives the user visual proof
-                // that audio is actually being captured. Concern #1: "recording but
-                // captures nothing" — if this bar never moves, the mic isn't working.
+                // Live audio level meter — visible proof that the mic is hot.
                 LevelMeter(level: vm.audioLevel, active: vm.isRecording && !vm.isPaused)
                     .frame(height: 60)
                     .padding(.horizontal)
@@ -43,52 +50,106 @@ struct RecordingView: View {
         }
     }
 
+    private var timerColor: Color {
+        guard vm.isRecording else { return .primary }
+        return vm.isPaused ? .secondary : .red
+    }
+
+    private var statusBadge: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(vm.isPaused ? Color.orange : Color.red)
+                .frame(width: 10, height: 10)
+                .opacity(vm.isPaused ? 1.0 : (vm.audioLevel > 0.05 ? 1.0 : 0.4))
+                .animation(.easeInOut(duration: 0.4), value: vm.audioLevel > 0.05)
+            Text(vm.isPaused ? "PAUSED" : "RECORDING")
+                .font(.caption.weight(.semibold))
+                .tracking(1.5)
+                .foregroundStyle(vm.isPaused ? Color.orange : Color.red)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(
+            (vm.isPaused ? Color.orange : Color.red).opacity(0.12),
+            in: Capsule()
+        )
+    }
+
     private var controls: some View {
-        HStack(spacing: 32) {
-            if vm.isRecording {
-                // Discard (cancel) — concern #4
-                Button {
-                    showDiscardConfirm = true
-                } label: {
-                    Image(systemName: "trash.fill")
-                        .font(.title)
-                        .frame(width: 60, height: 60)
-                        .background(Color.gray.opacity(0.2), in: Circle())
-                }
-                .accessibilityLabel("Discard recording")
+        VStack(spacing: 16) {
+            HStack(spacing: 24) {
+                if vm.isRecording {
+                    controlButton(
+                        systemName: "trash.fill",
+                        label: "Discard",
+                        size: 64,
+                        background: Color.gray.opacity(0.18),
+                        foreground: .primary,
+                        action: { showDiscardConfirm = true }
+                    )
 
-                // Pause / resume
-                Button {
-                    vm.togglePause()
-                } label: {
-                    Image(systemName: vm.isPaused ? "play.fill" : "pause.fill")
-                        .font(.title)
-                        .frame(width: 60, height: 60)
-                        .background(Color.yellow.opacity(0.2), in: Circle())
-                }
+                    // The pause/resume control — visually the same size as Stop
+                    // so it doesn't feel like a tucked-away minor action.
+                    controlButton(
+                        systemName: vm.isPaused ? "play.fill" : "pause.fill",
+                        label: vm.isPaused ? "Resume" : "Pause",
+                        size: 88,
+                        background: vm.isPaused ? Color.green : Color.orange,
+                        foreground: .white,
+                        action: { vm.togglePause() }
+                    )
 
-                // Stop and upload
-                Button {
-                    vm.stopAndUpload()
-                } label: {
-                    Image(systemName: "stop.fill")
-                        .font(.title)
-                        .foregroundStyle(.white)
-                        .frame(width: 80, height: 80)
-                        .background(Color.red, in: Circle())
+                    controlButton(
+                        systemName: "stop.fill",
+                        label: "Stop & Save",
+                        size: 88,
+                        background: Color.red,
+                        foreground: .white,
+                        action: { vm.stopAndUpload() }
+                    )
+                } else {
+                    VStack(spacing: 10) {
+                        Button {
+                            vm.startRecording()
+                        } label: {
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 38))
+                                .foregroundStyle(.white)
+                                .frame(width: 104, height: 104)
+                                .background(Color.red, in: Circle())
+                                .shadow(color: .red.opacity(0.35), radius: 14, x: 0, y: 6)
+                        }
+                        .accessibilityLabel("Start recording")
+                        Text("Tap to record")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-            } else {
-                Button {
-                    vm.startRecording()
-                } label: {
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 36))
-                        .foregroundStyle(.white)
-                        .frame(width: 96, height: 96)
-                        .background(Color.red, in: Circle())
-                }
-                .accessibilityLabel("Start recording")
             }
+        }
+    }
+
+    @ViewBuilder
+    private func controlButton(
+        systemName: String,
+        label: String,
+        size: CGFloat,
+        background: Color,
+        foreground: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        VStack(spacing: 6) {
+            Button(action: action) {
+                Image(systemName: systemName)
+                    .font(.system(size: size * 0.34, weight: .semibold))
+                    .foregroundStyle(foreground)
+                    .frame(width: size, height: size)
+                    .background(background, in: Circle())
+            }
+            .accessibilityLabel(label)
+            Text(label)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
         }
     }
 
