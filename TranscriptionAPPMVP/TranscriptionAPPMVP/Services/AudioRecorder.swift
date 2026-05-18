@@ -95,6 +95,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = true
 
         startMetering()
+        RecordingNotificationManager.shared.showRecordingStatus(elapsedSeconds: 0, isPaused: false)
         return recordingId
     }
 
@@ -103,16 +104,16 @@ final class AudioRecorder: NSObject, ObservableObject {
         recorder.pause()
         isPaused = true
         pausedByUser = true
+        RecordingNotificationManager.shared.showRecordingStatus(elapsedSeconds: elapsedSeconds, isPaused: true)
     }
 
     func resume() {
         guard isRecording, isPaused, let recorder else { return }
-        // Re-activate the session defensively; iOS sometimes deactivates it
-        // when other apps take the audio focus.
         try? AVAudioSession.sharedInstance().setActive(true, options: [])
         if recorder.record() {
             isPaused = false
             pausedByUser = false
+            RecordingNotificationManager.shared.showRecordingStatus(elapsedSeconds: elapsedSeconds, isPaused: false)
         }
     }
 
@@ -154,6 +155,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         levelTimer?.invalidate()
         levelTimer = nil
         UIApplication.shared.isIdleTimerDisabled = false
+        RecordingNotificationManager.shared.clearRecordingStatus()
     }
 
     // MARK: - Metering / live timer
@@ -170,6 +172,13 @@ final class AudioRecorder: NSObject, ObservableObject {
                 let normalized = max(0, (db + 60) / 60)
                 self.audioLevel = normalized
                 self.elapsedSeconds = recorder.currentTime
+                // Update the Notification Center status (re-post is no-op
+                // unless the body string actually changed; the manager handles
+                // that so we don't spam the system).
+                RecordingNotificationManager.shared.showRecordingStatus(
+                    elapsedSeconds: self.elapsedSeconds,
+                    isPaused: self.isPaused
+                )
             }
         }
     }
