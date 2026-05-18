@@ -38,6 +38,10 @@ final class AudioRecorder: NSObject, ObservableObject {
     private var currentFileURL: URL?
     private var currentRecordingId: UUID?
     private var levelTimer: Timer?
+    /// Tracks whether the current pause came from the user tapping Pause
+    /// vs from an iOS interruption (phone call, Siri, alarm). If the user
+    /// paused, an incoming call followed by call-end should NOT auto-resume.
+    private var pausedByUser = false
 
     override init() {
         super.init()
@@ -98,12 +102,17 @@ final class AudioRecorder: NSObject, ObservableObject {
         guard isRecording, !isPaused, let recorder else { return }
         recorder.pause()
         isPaused = true
+        pausedByUser = true
     }
 
     func resume() {
         guard isRecording, isPaused, let recorder else { return }
+        // Re-activate the session defensively; iOS sometimes deactivates it
+        // when other apps take the audio focus.
+        try? AVAudioSession.sharedInstance().setActive(true, options: [])
         if recorder.record() {
             isPaused = false
+            pausedByUser = false
         }
     }
 
@@ -139,6 +148,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         currentRecordingId = nil
         isRecording = false
         isPaused = false
+        pausedByUser = false
         elapsedSeconds = 0
         audioLevel = 0
         levelTimer?.invalidate()
@@ -192,13 +202,25 @@ final class AudioRecorder: NSObject, ObservableObject {
 
         switch type {
         case .began:
-            // Phone call / Siri started. AVAudioRecorder is paused for us automatically.
+            // Phone call / Siri / alarm grabbed the audio session. iOS
+            // auto-pauses AVAudioRecorder — we mirror that in our state so
+            // the UI shows the PAUSED badge. We don't set pausedByUser
+            // because the user didn't initiate this.
             isPaused = true
         case .ended:
             guard let optsRaw = info[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
             let opts = AVAudioSession.InterruptionOptions(rawValue: optsRaw)
-            if opts.contains(.shouldResume), let recorder, isRecording {
-                if recorder.record() { isPaused = false }
+            // Only auto-resume if iOS suggests it AND the user wasn't already
+            // pausing intentionally before the interruption.
+            guard opts.contains(.shouldResume),
+                  !pausedByUser,
+                  let recorder,
+                  isRecording else { return }
+            // Re-activate the session — iOS may have deactivated it during
+            // the call. Without this, recorder.record() can fail silently.
+            try? AVAudioSession.sharedInstance().setActive(true, options: [])
+            if recorder.record() {
+                isPaused = false
             }
         @unknown default: break
         }
