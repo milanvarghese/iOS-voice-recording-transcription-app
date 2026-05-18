@@ -4,6 +4,7 @@ struct HistoryView: View {
     @StateObject private var vm = HistoryViewModel()
     @State private var renaming: Recording?
     @State private var newTitle: String = ""
+    @State private var pendingForeverDelete: Recording?
 
     var body: some View {
         NavigationStack {
@@ -25,9 +26,16 @@ struct HistoryView: View {
                                 RecordingRow(recording: recording)
                             }
                             .swipeActions(edge: .trailing) {
+                                // Destructive cloud delete sits at the outer
+                                // edge so it requires more intent.
                                 Button(role: .destructive) {
-                                    Task { await vm.delete(recording) }
+                                    pendingForeverDelete = recording
                                 } label: { Label("Delete", systemImage: "trash") }
+
+                                Button {
+                                    vm.removeFromPhone(recording)
+                                } label: { Label("Remove from Phone", systemImage: "iphone.slash") }
+                                .tint(.orange)
 
                                 Button {
                                     newTitle = recording.title
@@ -57,6 +65,25 @@ struct HistoryView: View {
                     renaming = nil
                 }
                 Button("Cancel", role: .cancel) { renaming = nil }
+            }
+            .confirmationDialog(
+                "Delete this recording everywhere?",
+                isPresented: Binding(
+                    get: { pendingForeverDelete != nil },
+                    set: { if !$0 { pendingForeverDelete = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: pendingForeverDelete
+            ) { recording in
+                Button("Delete from cloud + phone", role: .destructive) {
+                    Task { await vm.deleteForever(recording) }
+                    pendingForeverDelete = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingForeverDelete = nil
+                }
+            } message: { _ in
+                Text("The audio file and transcript will be permanently removed from cloud storage. This can't be undone.")
             }
         }
     }

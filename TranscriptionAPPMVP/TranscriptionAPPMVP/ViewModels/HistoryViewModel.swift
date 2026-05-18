@@ -61,7 +61,17 @@ final class HistoryViewModel: ObservableObject {
         }
     }
 
-    func delete(_ recording: Recording) async {
+    /// Remove only the local audio cache. Cloud copy + DB row are preserved
+    /// — the recording stays in History, and the audio re-downloads on next
+    /// play. Use this to free up space without losing the recording.
+    func removeFromPhone(_ recording: Recording) {
+        AudioRecorder.deleteLocalAudio(for: recording.id)
+        objectWillChange.send()
+    }
+
+    /// Delete a recording everywhere: cloud storage, DB row, and local cache.
+    /// Irreversible. Call this only when the user has explicitly confirmed.
+    func deleteForever(_ recording: Recording) async {
         do {
             try await SupabaseService.shared.deleteRecording(
                 id: recording.id,
