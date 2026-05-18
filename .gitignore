@@ -62,8 +62,3 @@ supabase/.temp/
 
 # --- Misc ---
 *.log
-
-# --- Local-only fillable PDFs you test with ---
-# Folder exists in the repo with a README so the layout is consistent,
-# but the PDFs themselves stay on your machine.
-templates/*.pdf

@@ -1,8 +1,8 @@
 # templates/
 
-Local-only folder for **fillable PDF templates** you want to test the app with.
+Folder for **fillable PDF templates** you upload to the app. Tracked in git so collaborators and CI see the same sample data.
 
-This folder exists in the repo so the project layout is consistent across machines, but the PDFs themselves are gitignored (see `.gitignore`: `templates/*.pdf`). Drop any PDFs you'd like to upload to the app in here — they stay on your Mac.
+Drop any fillable PDFs you want to keep in version control here. Note: PDFs are binary and don't diff cleanly, so don't go wild — only commit the ones you actually need as canonical samples.
 
 ## What is a "fillable" PDF?
 
