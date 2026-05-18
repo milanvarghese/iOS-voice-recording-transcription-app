@@ -46,6 +46,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
         Task { @MainActor in
             RecordingNotificationManager.shared.registerCategoriesIfNeeded()
+            // Orphan recovery: if iOS killed us mid-recording (typically
+            // during a long phone-call interruption), the M4A is still on
+            // disk and we have an in-progress marker. Enqueue it now so the
+            // recording reappears in History instead of being silently lost.
+            if let orphan = AudioRecorder.recoverOrphanedRecording() {
+                UploadQueue.shared.enqueue(orphan)
+            }
         }
         return true
     }

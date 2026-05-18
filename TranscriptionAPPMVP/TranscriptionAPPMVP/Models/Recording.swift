@@ -99,3 +99,15 @@ struct PendingRecording: Identifiable, Codable {
     let title: String
     let createdAt: Date
 }
+
+/// On-disk marker of a recording that's currently in progress. Written to
+/// UserDefaults when `AudioRecorder.start()` runs and cleared when the
+/// recording is stopped or discarded normally. If we see one of these on
+/// app launch with the M4A file still present, it means iOS killed the app
+/// mid-recording — typically because a phone call paused the recorder and
+/// iOS suspended us during the call. We use this to recover the file.
+struct InProgressRecording: Codable {
+    let id: UUID
+    let title: String
+    let createdAt: Date
+}
