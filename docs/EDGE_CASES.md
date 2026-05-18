@@ -64,7 +64,11 @@ If you do start handling extremely long content (10+ hours), the next moves woul
 - ✅ **Pause / resume during recording** — labeled buttons + RECORDING / PAUSED status pill above the timer. Capability was always in `AudioRecorder.pause/resume`; just made discoverable.
 - ✅ **Login UI** — dark theme with locked colors, explicit foreground/background so the screen can't render unreadable under any system color scheme.
 - ✅ **Encryption-compliance auto-pass** — `Info.plist` declares `ITSAppUsesNonExemptEncryption = false`. App Store Connect no longer prompts after every TestFlight upload.
-- ✅ **Orphan recovery on launch** — `AudioRecorder.start()` writes an in-progress marker to UserDefaults; `finishCleanup()` clears it. On app launch, `AudioRecorder.recoverOrphanedRecording()` checks for a stale marker + matching M4A on disk and auto-enqueues it. Combined with a UIKit background task during interruptions, this covers the "phone call killed the app mid-recording" failure mode: the M4A stays on disk through the iOS kill, recovery picks it up on the next launch, the user sees their recording appear in History within seconds without any manual action.
+- ✅ **Orphan recovery on launch with Continue/Save/Discard** — `AudioRecorder.start()` writes an in-progress marker to UserDefaults; `finishCleanup()` clears it. On app launch, `AudioRecorder.checkForOrphan()` notices a stale marker + matching M4A on disk and surfaces it as `pendingOrphan`. The Recording tab shows a card with three actions:
+  - **Continue** → `AudioRecorder.resumeOrphan()` opens an `AVAudioRecorder` pointing at the same M4A; `record()` appends from the existing end-of-file. One seamless recording across the interruption.
+  - **Save** → `saveOrphanWithoutResume()` enqueues for upload as-is (the older auto-recovery behavior).
+  - **Discard** → `discardOrphan()` deletes the file and the marker. Confirmation dialog so it's never accidental.
+  Combined with the UIKit background task during interruptions, this fully covers the "phone call killed the app" failure mode: the file survives the kill, and on next launch the user picks whether to continue, save, or scrap it.
 
 ### Still deferred
 

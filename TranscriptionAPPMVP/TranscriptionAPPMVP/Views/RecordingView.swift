@@ -3,11 +3,18 @@ import SwiftUI
 struct RecordingView: View {
     @StateObject private var vm = RecorderViewModel()
     @State private var showDiscardConfirm = false
+    @State private var showOrphanDiscardConfirm = false
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 32) {
                 Spacer()
+
+                // Orphan card — shown when iOS killed the app mid-recording
+                // and the M4A is still on disk. User picks one of three.
+                if let orphan = vm.pendingOrphan, !vm.isRecording {
+                    orphanCard(for: orphan)
+                }
 
                 // Status pill — only visible during a recording session so the
                 // user always knows whether they're capturing audio or paused.
@@ -47,7 +54,83 @@ struct RecordingView: View {
                 Button("Discard", role: .destructive) { vm.discard() }
                 Button("Keep recording", role: .cancel) {}
             }
+            .confirmationDialog(
+                "Discard the previous recording? The audio will be permanently deleted.",
+                isPresented: $showOrphanDiscardConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { vm.discardOrphan() }
+                Button("Keep it", role: .cancel) {}
+            }
         }
+    }
+
+    @ViewBuilder
+    private func orphanCard(for orphan: PendingRecording) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.arrow.circlepath")
+                    .font(.title3)
+                    .foregroundStyle(.orange)
+                Text("Previous recording interrupted")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+            }
+            Text("Your last session was interrupted (likely a phone call). The audio so far — \(orphanDurationLabel(orphan)) — is safe. What would you like to do?")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 10) {
+                Button {
+                    vm.continueOrphan()
+                } label: {
+                    Label("Continue", systemImage: "play.fill")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 10))
+                        .foregroundStyle(.white)
+                        .font(.footnote.weight(.semibold))
+                }
+                Button {
+                    vm.saveOrphan()
+                } label: {
+                    Label("Save", systemImage: "square.and.arrow.down")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.gray.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
+                        .foregroundStyle(.primary)
+                        .font(.footnote.weight(.semibold))
+                }
+                Button {
+                    showOrphanDiscardConfirm = true
+                } label: {
+                    Label("Discard", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                        .foregroundStyle(.red)
+                        .font(.footnote.weight(.semibold))
+                }
+            }
+        }
+        .padding(16)
+        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(Color.orange.opacity(0.35), lineWidth: 1)
+        )
+        .padding(.horizontal)
+    }
+
+    private func orphanDurationLabel(_ orphan: PendingRecording) -> String {
+        let total = orphan.durationSeconds
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 { return String(format: "%dh %dm %ds", h, m, s) }
+        if m > 0 { return String(format: "%dm %ds", m, s) }
+        return String(format: "%d seconds", s)
     }
 
     private var timerColor: Color {

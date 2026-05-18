@@ -14,6 +14,7 @@ final class RecorderViewModel: ObservableObject {
     var isPaused: Bool { recorder.isPaused }
     var elapsedSeconds: TimeInterval { recorder.elapsedSeconds }
     var audioLevel: Float { recorder.audioLevel }
+    var pendingOrphan: PendingRecording? { recorder.pendingOrphan }
 
     init() {
         recorder.objectWillChange
@@ -46,5 +47,25 @@ final class RecorderViewModel: ObservableObject {
 
     func discard() {
         recorder.discardCurrentRecording()
+    }
+
+    // MARK: - Orphan actions (resume / save / discard a recording that
+    // survived iOS killing the app mid-session)
+
+    func continueOrphan() {
+        do {
+            _ = try recorder.resumeOrphan()
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func saveOrphan() {
+        recorder.saveOrphanWithoutResume()
+    }
+
+    func discardOrphan() {
+        recorder.discardOrphan()
     }
 }

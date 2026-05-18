@@ -33,6 +33,10 @@ final class AudioRecorder: NSObject, ObservableObject {
     @Published private(set) var elapsedSeconds: TimeInterval = 0
     @Published private(set) var audioLevel: Float = 0          // 0…1, for the waveform UI
     @Published private(set) var lastError: String?
+    /// If iOS killed the app mid-recording and the M4A is still on disk,
+    /// this is set on app launch so the UI can offer Continue / Save /
+    /// Discard. Nil otherwise.
+    @Published var pendingOrphan: PendingRecording?
 
     private var recorder: AVAudioRecorder?
     private var currentFileURL: URL?
@@ -198,25 +202,23 @@ final class AudioRecorder: NSObject, ObservableObject {
         interruptionTaskID = .invalid
     }
 
-    // MARK: - Orphan recovery
+    // MARK: - Orphan recovery (Continue / Save / Discard)
 
-    /// Called once at app launch. If there's an in-progress marker AND its
-    /// M4A is still on disk, return a PendingRecording for it so the caller
-    /// can enqueue an upload. Clears the marker either way.
-    static func recoverOrphanedRecording() -> PendingRecording? {
-        guard let data = UserDefaults.standard.data(forKey: inProgressKey),
+    /// Called at app launch. If there's an in-progress marker AND its M4A is
+    /// still on disk, surface it as `pendingOrphan` for the UI to handle.
+    /// Does NOT clear the marker — that happens when the user chooses an
+    /// action (resumeOrphan / saveOrphanWithoutResume / discardOrphan).
+    func checkForOrphan() {
+        guard let data = UserDefaults.standard.data(forKey: Self.inProgressKey),
               let marker = try? JSONDecoder().decode(InProgressRecording.self, from: data) else {
-            return nil
+            return
         }
-        UserDefaults.standard.removeObject(forKey: inProgressKey)
-
-        let fileURL = recordingsDirectory().appendingPathComponent("\(marker.id.uuidString).m4a")
+        let fileURL = Self.recordingsDirectory().appendingPathComponent("\(marker.id.uuidString).m4a")
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            return nil
+            // Marker without file — stale. Clean up so we don't keep checking.
+            UserDefaults.standard.removeObject(forKey: Self.inProgressKey)
+            return
         }
-        // Best-effort duration via AVURLAsset. If it can't read the (possibly
-        // partial) file, fall back to a rough estimate from file size: at
-        // 64kbps mono AAC this is ~8 KB/sec.
         var duration = 0
         let asset = AVURLAsset(url: fileURL)
         if asset.duration.value > 0 {
@@ -224,13 +226,90 @@ final class AudioRecorder: NSObject, ObservableObject {
         } else if let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.size] as? Int {
             duration = max(1, size / 8000)
         }
-        return PendingRecording(
+        pendingOrphan = PendingRecording(
             id: marker.id,
             localFileURL: fileURL,
             durationSeconds: duration,
             title: marker.title,
             createdAt: marker.createdAt
         )
+    }
+
+    /// User tapped Continue: reopen the orphan's M4A and append. AVAudioRecorder
+    /// resumes from the end of the existing file when you call record() on a
+    /// recorder initialized at the same URL with the same settings.
+    @discardableResult
+    func resumeOrphan() throws -> UUID {
+        guard !isRecording else { throw RecorderError.alreadyRecording }
+        guard let orphan = pendingOrphan else {
+            throw NSError(domain: "AudioRecorder", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "No pending recording to continue."
+            ])
+        }
+        try requestMicPermission()
+        let fileURL = orphan.localFileURL
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            pendingOrphan = nil
+            UserDefaults.standard.removeObject(forKey: Self.inProgressKey)
+            throw NSError(domain: "AudioRecorder", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: "The previous recording's file is missing."
+            ])
+        }
+
+        // Same encoder settings as start() — required for AVAudioRecorder to
+        // append cleanly. If these ever change, old orphans become unappendable.
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: 44_100,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
+            AVEncoderBitRateKey: 64_000
+        ]
+        try? AVAudioSession.sharedInstance().setActive(true, options: [])
+        let recorder = try AVAudioRecorder(url: fileURL, settings: settings)
+        recorder.delegate = self
+        recorder.isMeteringEnabled = true
+        guard recorder.prepareToRecord(), recorder.record() else {
+            throw RecorderError.failedToStart
+        }
+
+        self.recorder = recorder
+        self.currentFileURL = fileURL
+        self.currentRecordingId = orphan.id
+        self.isRecording = true
+        self.isPaused = false
+        self.pausedByUser = false
+        self.elapsedSeconds = recorder.currentTime
+        self.lastError = nil
+        UIApplication.shared.isIdleTimerDisabled = true
+
+        // The in-progress marker is the same orphan's marker, so we leave it
+        // in place — if iOS kills us again, the next launch finds the same
+        // marker pointing at the same (now longer) file.
+
+        startMetering()
+        RecordingNotificationManager.shared.showRecordingStatus(
+            elapsedSeconds: elapsedSeconds, isPaused: false
+        )
+        pendingOrphan = nil
+        return orphan.id
+    }
+
+    /// User tapped Save: enqueue the orphan for upload as-is. This was the
+    /// previous auto-recovery behavior, now opt-in.
+    func saveOrphanWithoutResume() {
+        guard let orphan = pendingOrphan else { return }
+        UploadQueue.shared.enqueue(orphan)
+        UserDefaults.standard.removeObject(forKey: Self.inProgressKey)
+        pendingOrphan = nil
+    }
+
+    /// User tapped Discard: delete the M4A and forget the orphan. Irreversible.
+    func discardOrphan() {
+        guard let orphan = pendingOrphan else { return }
+        try? FileManager.default.removeItem(at: orphan.localFileURL)
+        UserDefaults.standard.removeObject(forKey: Self.inProgressKey)
+        pendingOrphan = nil
     }
 
     // MARK: - Metering / live timer
