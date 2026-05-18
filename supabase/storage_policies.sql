@@ -33,3 +33,37 @@ create policy "recordings_storage_delete_own"
     bucket_id = 'recordings'
     and (storage.foldername(name))[1] = auth.uid()::text
   );
+
+-- ---------------------------------------------------------------------------
+-- pdf-templates bucket: per-user paths `<user_id>/<template_id>.pdf`
+-- Same UUID-case caveat: iOS lowercases the user UUID before building the
+-- path so this text comparison passes.
+-- ---------------------------------------------------------------------------
+
+create policy "templates_storage_select_own"
+  on storage.objects for select
+  using (
+    bucket_id = 'pdf-templates'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "templates_storage_insert_own"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'pdf-templates'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "templates_storage_update_own"
+  on storage.objects for update
+  using (
+    bucket_id = 'pdf-templates'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "templates_storage_delete_own"
+  on storage.objects for delete
+  using (
+    bucket_id = 'pdf-templates'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );

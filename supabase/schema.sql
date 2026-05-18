@@ -78,3 +78,42 @@ create policy "recordings_delete_own"
 -- when a transcript completes.
 -- ---------------------------------------------------------------------------
 alter publication supabase_realtime add table public.recordings;
+
+-- ---------------------------------------------------------------------------
+-- pdf_templates: user-uploaded fillable PDFs that can be filled out from
+-- a recording's extracted_fields + transcript. field_names is a flat
+-- jsonb array of the form-field names detected in the PDF by PDFKit on
+-- the iOS side at upload time.
+-- ---------------------------------------------------------------------------
+create table public.pdf_templates (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users(id) on delete cascade,
+  name          text not null,
+  storage_path  text not null,     -- "<user_id>/<template_id>.pdf" in pdf-templates bucket
+  field_names   jsonb,             -- ["full_name","date_of_birth",...]
+  created_at    timestamptz not null default now()
+);
+
+create index pdf_templates_user_id_created_at_idx
+  on public.pdf_templates (user_id, created_at desc);
+
+alter table public.pdf_templates enable row level security;
+
+create policy "pdf_templates_select_own"
+  on public.pdf_templates for select
+  using (auth.uid() = user_id);
+
+create policy "pdf_templates_insert_own"
+  on public.pdf_templates for insert
+  with check (auth.uid() = user_id);
+
+create policy "pdf_templates_update_own"
+  on public.pdf_templates for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "pdf_templates_delete_own"
+  on public.pdf_templates for delete
+  using (auth.uid() = user_id);
+
+alter publication supabase_realtime add table public.pdf_templates;

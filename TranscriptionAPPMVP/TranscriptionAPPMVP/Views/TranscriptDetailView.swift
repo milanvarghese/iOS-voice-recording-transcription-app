@@ -150,6 +150,7 @@ struct TranscriptDetailView: View {
     @State private var retryError: String?
     @State private var isExtracting = false
     @State private var extractError: String?
+    @State private var showingFillTemplate = false
 
     var body: some View {
         ScrollView {
@@ -195,6 +196,9 @@ struct TranscriptDetailView: View {
                 await player.load(for: recording)
             }
         }
+        .sheet(isPresented: $showingFillTemplate) {
+            FillTemplateSheet(recording: recording)
+        }
     }
 
     private var hasPlayableAudio: Bool {
@@ -227,6 +231,26 @@ struct TranscriptDetailView: View {
             if let fields = recording.extractedFields {
                 CodeBlockView(json: fields.prettyPrinted())
                 DocumentPreviewView(recording: recording, fields: fields)
+                Button {
+                    showingFillTemplate = true
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.text.fill")
+                        Text("Fill a PDF template from this recording")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.accentColor, Color.purple],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        in: RoundedRectangle(cornerRadius: 12)
+                    )
+                    .foregroundStyle(.white)
+                }
             } else if isExtracting {
                 CodeBlockView(json: "{\n  \"status\": \"extracting…\"\n}")
             } else {

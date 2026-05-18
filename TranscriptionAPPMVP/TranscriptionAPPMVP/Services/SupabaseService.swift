@@ -162,6 +162,92 @@ final class SupabaseService: ObservableObject {
             options: .init(body: Body(recording_id: recordingId.uuidString))
         )
     }
+
+    // MARK: - PDF templates
+
+    /// Lists the current user's saved templates, newest first.
+    func fetchTemplates() async throws -> [PdfTemplate] {
+        try await client
+            .from("pdf_templates")
+            .select()
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+
+    /// Uploads a PDF blob to the pdf-templates bucket at <user_id>/<id>.pdf
+    /// and inserts a matching pdf_templates row carrying the detected field
+    /// names. Returns the inserted row.
+    func uploadTemplate(name: String, pdfData: Data, fieldNames: [String]) async throws -> PdfTemplate {
+        guard let userId = currentUserId else {
+            throw NSError(domain: "SupabaseService", code: 401, userInfo: [
+                NSLocalizedDescriptionKey: "Not signed in"
+            ])
+        }
+        let templateId = UUID()
+        let storagePath = "\(userId.uuidString.lowercased())/\(templateId.uuidString.lowercased()).pdf"
+
+        _ = try await client.storage
+            .from("pdf-templates")
+            .upload(
+                storagePath,
+                data: pdfData,
+                options: FileOptions(contentType: "application/pdf", upsert: false)
+            )
+
+        let row = PdfTemplate(
+            id: templateId,
+            userId: userId,
+            name: name,
+            storagePath: storagePath,
+            fieldNames: fieldNames,
+            createdAt: Date()
+        )
+        try await client.from("pdf_templates").insert(row).execute()
+        return row
+    }
+
+    /// Removes a template's PDF from Storage and its DB row. Use after the
+    /// user explicitly confirms deletion.
+    func deleteTemplate(_ template: PdfTemplate) async throws {
+        _ = try? await client.storage
+            .from("pdf-templates")
+            .remove(paths: [template.storagePath])
+        try await client
+            .from("pdf_templates")
+            .delete()
+            .eq("id", value: template.id)
+            .execute()
+    }
+
+    /// Downloads the template PDF bytes from Storage. The result is written
+    /// to disk by the caller before being handed to PDFKit.
+    func downloadTemplate(_ template: PdfTemplate) async throws -> Data {
+        try await client.storage
+            .from("pdf-templates")
+            .download(path: template.storagePath)
+    }
+
+    /// Calls the map_to_template Edge Function and returns the
+    /// {field_name: value} mapping Claude produced.
+    func mapToTemplate(recordingId: UUID, templateId: UUID) async throws -> [String: String] {
+        struct Body: Encodable {
+            let recording_id: String
+            let template_id: String
+        }
+        struct Response: Decodable {
+            let ok: Bool
+            let mapping: [String: String]
+        }
+        let resp: Response = try await client.functions.invoke(
+            "map_to_template",
+            options: .init(body: Body(
+                recording_id: recordingId.uuidString,
+                template_id: templateId.uuidString
+            ))
+        )
+        return resp.mapping
+    }
 }
 
 /// Stub — supabase-swift provides default in-memory storage for sessions.
