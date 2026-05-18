@@ -33,6 +33,11 @@ Return a single JSON object whose keys EXACTLY match each field's "name", and wh
 
 - Match the label/name to source data by semantic meaning, not exact match. A field labelled "Patient's full name" matches JSON "name" or a person mentioned in the transcript. "DOB" matches "date_of_birth".
 - If the label clearly asks for information that is present in the transcript or extracted fields, you MUST fill it — do not leave it blank just because the wording isn't identical.
+- SPLIT composite values when the form asks for components:
+  - JSON {"name": "Milan Varghese"} with PDF fields "First name" + "Last name" → first="Milan", last="Varghese".
+  - JSON {"address": "123 Main St, Springfield, IL 62701"} with PDF fields "Street" + "City" + "State" + "Zip" → split into the four components.
+  - JSON {"phone": "+1 (415) 555-0123"} with PDF "Area code" + "Phone" → area="415", phone="555-0123".
+- COMBINE when the inverse happens: JSON has firstName + lastName but PDF has one "Full name" field → join with a space.
 - Coerce values to strings:
   - Dates → natural readable format, e.g., "January 15, 1995" or "1995-01-15" if the form looks numeric.
   - Numbers → numerals as strings, e.g., "26".
