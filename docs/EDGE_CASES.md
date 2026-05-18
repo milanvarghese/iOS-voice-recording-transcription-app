@@ -59,6 +59,11 @@ If you do start handling extremely long content (10+ hours), the next moves woul
 - ✅ **AssemblyAI submission retry** — `TranscriptDetailView` shows a "Retry transcription" button on `.failed` rows when `storage_path` is set. Resets status and re-invokes the Edge Function.
 - ✅ **Local audio retained after upload** — the local M4A stays on disk; "Remove from Phone" is a separate action from "Delete forever". Audio player falls back to cloud signed URL when local is missing.
 - ✅ **Queue self-healing** — `UploadQueue` pops failed items instead of retrying forever. A poisoned pending recording can no longer block the queue.
+- ✅ **Claude-powered structured field extraction** — `extract_fields` Edge Function (Sonnet 4.6) chains from the AssemblyAI webhook, returns a content-adaptive JSON object. Stored in `recordings.extracted_fields`, rendered as a syntax-highlighted dark code block in the detail view. Manual re-extract button included.
+- ✅ **Memory-mapped audio upload** — `Data(contentsOf:, options: [.mappedIfSafe])` so a multi-hour M4A doesn't get fully loaded into the iOS process's heap.
+- ✅ **Pause / resume during recording** — labeled buttons + RECORDING / PAUSED status pill above the timer. Capability was always in `AudioRecorder.pause/resume`; just made discoverable.
+- ✅ **Login UI** — dark theme with locked colors, explicit foreground/background so the screen can't render unreadable under any system color scheme.
+- ✅ **Encryption-compliance auto-pass** — `Info.plist` declares `ITSAppUsesNonExemptEncryption = false`. App Store Connect no longer prompts after every TestFlight upload.
 
 ### Still deferred
 

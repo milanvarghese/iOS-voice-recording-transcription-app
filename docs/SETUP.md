@@ -32,7 +32,14 @@ End-to-end setup, starting from zero accounts. Estimate: 60–90 minutes if it's
 1. Sign up at [assemblyai.com](https://www.assemblyai.com). $50 free credit on signup at the time of writing — more than enough for testing.
 2. **Dashboard → Account → API Keys**. Copy the key. Save somewhere safe.
 
-## 3. Edge Functions (the transcription glue)
+## 3. Anthropic (for structured field extraction)
+
+The `extract_fields` Edge Function feeds the transcript to Claude Sonnet 4.6 and asks for a flexible JSON of the most relevant fields. Schema is content-adaptive (a meeting gets meeting fields, a shopping list gets items, etc.).
+
+1. Sign up at [console.anthropic.com](https://console.anthropic.com). $5 of free credit on signup, which is plenty for hundreds of extractions at Sonnet 4.6 prices (~$0.005–0.02 per recording).
+2. **Settings → API Keys → Create Key**. Copy it — it only shows once.
+
+## 4. Edge Functions (transcription + extraction glue)
 
 Install the Supabase CLI on macOS:
 
@@ -56,29 +63,33 @@ supabase login --token sbp_YOUR_TOKEN
 # Link this repo to your project
 supabase link --project-ref YOUR-PROJECT-REF
 
-# Set the three secrets
+# Set the four secrets
 supabase secrets set ASSEMBLYAI_API_KEY=your_assemblyai_key
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-api03-your_anthropic_key
 supabase secrets set WEBHOOK_SECRET=$(openssl rand -hex 32)
 supabase secrets set WEBHOOK_URL=https://YOUR-PROJECT-REF.supabase.co/functions/v1/assemblyai_webhook
 
-# Deploy both functions
+# Deploy all three functions
 supabase functions deploy assemblyai_webhook --no-verify-jwt
 supabase functions deploy submit_for_transcription
+supabase functions deploy extract_fields
 ```
 
 **Common pitfall:** triple-check that `WEBHOOK_URL` was set to the full HTTPS URL, not accidentally to the secret value. If AssemblyAI later returns 502s pointing at "unreachable webhook," look here first.
 
 **AssemblyAI's `speech_models` requirement:** `submit_for_transcription/index.ts` sends `speech_models: ["universal-2"]` in the request body. AssemblyAI rejects submissions without this field (added to their API in late 2025). If you fork the function and remove it, every transcription will 400.
 
-To verify both functions deployed:
+**Auto-chained extraction:** `assemblyai_webhook` calls `extract_fields` internally after writing a transcript. Extraction is a single Claude API call (~1–3 seconds for short transcripts). If it fails, the transcript still saves and the user can re-trigger extraction from the detail view.
+
+To verify all three functions deployed:
 
 ```bash
 supabase functions list
 ```
 
-Both should show `ACTIVE`.
+All three (`assemblyai_webhook`, `submit_for_transcription`, `extract_fields`) should show `ACTIVE`.
 
-## 4. iOS app
+## 5. iOS app
 
 1. Install **Xcode 16+** (App Store). Xcode Cloud builds with the latest Xcode regardless, but you need 16+ locally for `PBXFileSystemSynchronizedRootGroup` projects.
 2. **Open the existing Xcode project** at `TranscriptionAPPMVP/TranscriptionAPPMVP.xcodeproj`. (The repo ships an `.xcodeproj` so you don't have to create one.)
@@ -98,7 +109,7 @@ Both should show `ACTIVE`.
 7. **Build & run** on a real device or a recent simulator (iPhone 15 or 17, iOS 17/18). The simulator's microphone works but its audio quality is low; for realistic transcription tests use a real device.
 8. **First-run flow**: sign in with your email, enter the 6-digit code from the email, tap Record, talk for 10 seconds, tap Stop, switch to History → watch the row go Uploading → Transcribing → Ready.
 
-## 5. Troubleshooting
+## 6. Troubleshooting
 
 **OTP email arrives but contains no 6-digit code** — Step 1.7 was skipped. The Magic Link template needs `{{ .Token }}` added.
 
@@ -108,7 +119,9 @@ Both should show `ACTIVE`.
 
 **Recording uploads but transcript never arrives** — Two causes:
   1. `WEBHOOK_URL` secret is wrong (set to the secret value or empty). Re-set it via `supabase secrets set WEBHOOK_URL=...` and redeploy the function.
-  2. AssemblyAI returned an error. Check Supabase dashboard → Edge Functions → `submit_for_transcription` → Logs. Most common error in late-2025 onward: missing `speech_models` (see step 3).
+  2. AssemblyAI returned an error. Check Supabase dashboard → Edge Functions → `submit_for_transcription` → Logs. Most common error in late-2025 onward: missing `speech_models` (see step 4).
+
+**Transcript appears but Extracted Fields stays empty** — Most likely `ANTHROPIC_API_KEY` isn't set or is invalid. Check via `supabase secrets list` (key value won't be visible, just the hash). Re-set with `supabase secrets set ANTHROPIC_API_KEY=...` and tap the re-extract icon in the detail view. Logs are in Supabase dashboard → Edge Functions → `extract_fields`.
 
 **Recording doesn't continue when app is backgrounded** — Background Modes capability missing or doesn't include Audio.
 

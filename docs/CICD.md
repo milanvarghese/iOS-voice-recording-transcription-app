@@ -40,6 +40,8 @@ You can skip this manual step — the Xcode Cloud wizard will prompt for the sam
 
 Xcode Cloud needs `SUPABASE_URL` and `SUPABASE_ANON_KEY` so `ci_scripts/ci_post_clone.sh` can write `Config.swift` at build time.
 
+(Anthropic, AssemblyAI, and webhook secrets are stored in **Supabase** Edge Function secrets, not in Xcode Cloud — they're only used server-side by the Edge Functions, not in the iOS app.)
+
 1. App Store Connect → your app → **Xcode Cloud** tab → **Settings** (gear icon) → **Environment**.
 2. Add → name `SUPABASE_URL`, value `https://<your-ref>.supabase.co`, **Secret** unchecked.
 3. Add → name `SUPABASE_ANON_KEY`, value your real anon key (the long `eyJh…` JWT), **Secret** checked.

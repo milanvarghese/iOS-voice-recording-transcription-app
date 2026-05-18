@@ -49,12 +49,12 @@ Xcode Cloud auto-triggers a build (about 5–8 min). Watch progress at App Store
 4. Click **Deliver**. Upload takes 1–3 min.
 5. Green "Delivery succeeded" → done.
 
-## 5. Approve compliance + distribute
+## 5. Wait for processing + auto-distribution
 
 1. Wait ~5–15 min for Apple's server-side processing. You'll get an email "TranscriptionAPPMVP 1.0(N) has finished processing" when ready.
 2. App Store Connect → your app → **TestFlight** tab. The build appears under "iOS Builds".
-3. A yellow **"Missing Compliance"** banner sits next to the build. Click it → "Does your app use encryption?" → **No**. This is the standard exemption for apps that only use Apple's built-in HTTPS / URLSession (we don't bundle OpenSSL or any custom crypto).
-4. Status flips to **"Ready to Test"** within ~30 seconds.
+3. **The compliance step is now automatic.** `Info.plist` declares `ITSAppUsesNonExemptEncryption = false` so Apple skips the "Missing Compliance" prompt and flips straight to **"Ready to Test"** (a few seconds after processing finishes). Older builds without this key will still ask — answer "No" once and never again.
+4. If you ever add a non-Apple crypto library (OpenSSL, libsodium, etc.) you'll need to flip the flag to `true` and file annual ERN paperwork. Until then, every build auto-passes.
 
 ## 6. Set up testers (one-time per group)
 

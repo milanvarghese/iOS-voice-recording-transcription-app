@@ -6,6 +6,7 @@ An iOS app that records long-form audio (minutes to hours), uploads it to cloud 
 - iOS-native: Swift 5.9 + SwiftUI, iOS 17+
 - Backend: Supabase (Postgres + Auth + Storage + Edge Functions)
 - Transcription: AssemblyAI (async API with webhooks, `universal-2` model)
+- Structured field extraction: Anthropic Claude (Sonnet 4.6) via an Edge Function — content-adaptive JSON schema
 - Auth: Email OTP (6-digit code)
 - CI/CD: Xcode Cloud (builds the archive); TestFlight upload via Apple Transporter
 - Push notifications: planned, not built (see `docs/EDGE_CASES.md`)
@@ -26,10 +27,18 @@ End-to-end pipeline is working in TestFlight. You can sign in, record, upload, t
 | Async transcription via AssemblyAI | ✅ Working — `universal-2` speech model |
 | Live History updates via Supabase Realtime | ✅ Working |
 | Transcript viewing | ✅ Working — text is selectable |
+| **Claude-powered structured field extraction** | ✅ Working — content-adaptive JSON, auto-runs after transcription |
+| **Dark code-block UI for extracted fields** | ✅ Working — syntax-highlighted JSON, selectable text |
+| **Manual re-extract button** | ✅ Working — tap the wand/refresh icon in detail view |
 | Audio playback (play / pause / scrubber) | ✅ Working — local file when present, signed URL fallback |
+| **Pause / resume during recording** | ✅ Working — labeled buttons + RECORDING / PAUSED status pill |
 | Retry transcription on `failed` rows | ✅ Working |
 | "Remove from Phone" vs "Delete forever" | ✅ Working — local cache vs full cloud delete |
 | Rename a recording | ✅ Working |
+| **Polished dark-theme login UI** | ✅ Working — locked colors, focus rings, gradient action button |
+| **Developer credit + version in Settings** | ✅ Working — About section + login footer |
+| **Memory-mapped audio upload** | ✅ Working — multi-hour M4As no longer load into RAM |
+| **Encryption-compliance auto-pass** | ✅ Working — `ITSAppUsesNonExemptEncryption=false` in Info.plist |
 | Xcode Cloud build automation | ✅ Working (with one quirk — see `docs/CICD.md`) |
 | TestFlight delivery | ⚠️ Manual via Transporter — see `docs/TESTFLIGHT.md` |
 | APNs push when a transcript completes | ⏭ Deferred — see `docs/EDGE_CASES.md` |
@@ -43,52 +52,53 @@ End-to-end pipeline is working in TestFlight. You can sign in, record, upload, t
 ## Architecture (end-to-end flow)
 
 ```
-[ iPhone ]                              [ Supabase ]                    [ AssemblyAI ]
-   |                                         |                                 |
-   | 1. Sign in (email + 6-digit OTP)        |                                 |
-   |---------------------------------------->|                                 |
-   |<--- session JWT ----------------------- |                                 |
-   |                                         |                                 |
-   | 2. Tap Record. AVAudioRecorder writes   |                                 |
-   |    M4A to disk continuously. The UI     |                                 |
-   |    timer reads recorder.currentTime —   |                                 |
-   |    no parallel counter.                 |                                 |
-   |                                         |                                 |
-   | 3. Tap Stop. UploadQueue inserts row    |                                 |
-   |    into `recordings` (status=uploading) |                                 |
-   |    and uploads the M4A to Storage.      |                                 |
-   |---------------------------------------->|                                 |
-   |                                         |                                 |
-   | 4. Upload completes. App calls          |                                 |
-   |    Edge Function `submit_for_transcription`                               |
-   |    with the recording_id.               |                                 |
-   |---------------------------------------->|                                 |
-   |                                         | 5. Edge Function generates a    |
-   |                                         |    24-hour signed URL, POSTs    |
-   |                                         |    a job to AssemblyAI with     |
-   |                                         |    speech_models=[universal-2], |
-   |                                         |    webhook URL + secret.        |
-   |                                         |-------------------------------->|
-   |                                         |<--- job id ------------------- |
-   |                                         | Sets status=transcribing,       |
-   |                                         | stores assemblyai_id.           |
-   |                                         |                                 |
-   |                                         |          6. AssemblyAI works    |
-   |                                         |             (~30% of audio      |
-   |                                         |             duration).          |
-   |                                         |                                 |
-   |                                         |<--- webhook: transcript ready --|
-   |                                         | 7. assemblyai_webhook function  |
-   |                                         |    verifies the shared secret,  |
-   |                                         |    pulls the transcript, writes |
-   |                                         |    it to the recording row,     |
-   |                                         |    status=done.                 |
-   |<--- realtime row update ----------------|                                 |
-   |                                         |                                 |
-   | 8. History row flips to "Ready".        |                                 |
-   |    Tapping it shows the transcript +    |                                 |
-   |    audio player. Local M4A is still on  |                                 |
-   |    disk for instant playback.           |                                 |
+[ iPhone ]                  [ Supabase ]            [ AssemblyAI ]      [ Anthropic ]
+   |                              |                       |                    |
+   | 1. Email OTP sign-in         |                       |                    |
+   |----------------------------->|                       |                    |
+   |<--- session JWT -------------|                       |                    |
+   |                              |                       |                    |
+   | 2. Record. M4A streams to    |                       |                    |
+   |    disk; UI timer bound to   |                       |                    |
+   |    recorder.currentTime.     |                       |                    |
+   |    Pause / resume keeps the  |                       |                    |
+   |    same file open.           |                       |                    |
+   |                              |                       |                    |
+   | 3. Stop. UploadQueue inserts |                       |                    |
+   |    recordings row + uploads  |                       |                    |
+   |    M4A (mmap'd, resumable).  |                       |                    |
+   |----------------------------->|                       |                    |
+   |                              |                       |                    |
+   | 4. Invoke submit_for_        |                       |                    |
+   |    transcription Edge Fn.    |                       |                    |
+   |----------------------------->|                       |                    |
+   |                              | 5. Signs URL,         |                    |
+   |                              |    POSTs to           |                    |
+   |                              |    AssemblyAI         |                    |
+   |                              |    (universal-2).     |                    |
+   |                              |---------------------->|                    |
+   |                              |<--- job_id -----------|                    |
+   |                              |                       |                    |
+   |                              |       6. AssemblyAI processes              |
+   |                              |          (~30% of audio duration).         |
+   |                              |                       |                    |
+   |                              |<--- webhook ----------|                    |
+   |                              | 7a. assemblyai_webhook                     |
+   |                              |     writes transcript, status=done         |
+   |                              |                       |                    |
+   |                              | 7b. Chains to                              |
+   |                              |     extract_fields, which calls            |
+   |                              |     Claude Sonnet 4.6 ----------------->   |
+   |                              |<--- structured JSON ------------------     |
+   |                              | 7c. Writes extracted_fields to row         |
+   |                              |                       |                    |
+   |<--- realtime row update -----|                       |                    |
+   |                              |                       |                    |
+   | 8. History row flips to      |                       |                    |
+   |    Ready. Detail view shows  |                       |                    |
+   |    audio player + transcript |                       |                    |
+   |    + dark code block with    |                       |                    |
+   |    extracted_fields JSON.    |                       |                    |                                 |
 ```
 
 ### Design invariants (don't violate)
@@ -159,10 +169,11 @@ Full step-by-step is in `docs/SETUP.md` — the short version:
 
 1. **Supabase**: create a project. Run `supabase/schema.sql` then `supabase/storage_policies.sql` in the SQL editor. Create a private bucket named `recordings`. Disable "Confirm email" in Auth → Sign In / Providers → Email so OTP works without a verification round-trip. Update the **Magic Link** email template to include `{{ .Token }}` (otherwise the email has no OTP code).
 2. **AssemblyAI**: sign up, copy your API key.
-3. **Edge Functions**: `supabase login && supabase link --project-ref <your-ref>`, set secrets (`ASSEMBLYAI_API_KEY`, `WEBHOOK_SECRET`, `WEBHOOK_URL`), deploy both functions.
-4. **iOS app**: open `TranscriptionAPPMVP/TranscriptionAPPMVP.xcodeproj`. Copy `Config.swift.example` to `Config.swift` and fill in your Supabase URL + anon key. Add the supabase-swift package if not already resolved. Add Background Modes (Audio) capability + `Privacy - Microphone Usage Description` to the target Info.
-5. **Run on simulator or device** → sign in with your email → record → check History.
-6. **TestFlight**: see `docs/TESTFLIGHT.md`.
+3. **Anthropic**: sign up at [console.anthropic.com](https://console.anthropic.com), generate an API key — used by the `extract_fields` Edge Function to pull structured info from transcripts.
+4. **Edge Functions**: `supabase login && supabase link --project-ref <your-ref>`, set secrets (`ASSEMBLYAI_API_KEY`, `ANTHROPIC_API_KEY`, `WEBHOOK_SECRET`, `WEBHOOK_URL`), deploy all three functions (`assemblyai_webhook`, `submit_for_transcription`, `extract_fields`).
+5. **iOS app**: open `TranscriptionAPPMVP/TranscriptionAPPMVP.xcodeproj`. Copy `Config.swift.example` to `Config.swift` and fill in your Supabase URL + anon key. Add the supabase-swift package if not already resolved. Add Background Modes (Audio) capability + `Privacy - Microphone Usage Description` to the target Info.
+6. **Run on simulator or device** → sign in with your email → record → check History.
+7. **TestFlight**: see `docs/TESTFLIGHT.md`.
 
 ---
 
