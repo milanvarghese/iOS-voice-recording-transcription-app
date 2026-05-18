@@ -507,50 +507,9 @@ private struct DocumentPreviewView: View {
                 .font(.caption2.weight(.bold))
                 .tracking(1.2)
                 .foregroundStyle(dimInk)
-            renderValue(value, depth: 0)
+            JSONValueView(value: value, inkColor: ink, dimInkColor: dimInk)
         }
         .padding(.vertical, 4)
-    }
-
-    @ViewBuilder
-    private func renderValue(_ value: JSONValue, depth: Int) -> some View {
-        switch value {
-        case .null:
-            Text("—").foregroundStyle(dimInk)
-        case .bool(let b):
-            Text(b ? "Yes" : "No").foregroundStyle(ink)
-        case .int(let i):
-            Text(String(i)).foregroundStyle(ink)
-        case .double(let d):
-            Text(String(d)).foregroundStyle(ink)
-        case .string(let s):
-            Text(s)
-                .font(.system(.body, design: .serif))
-                .foregroundStyle(ink)
-                .textSelection(.enabled)
-        case .array(let items):
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(alignment: .top, spacing: 8) {
-                        Text("•").foregroundStyle(dimInk)
-                        renderValue(item, depth: depth + 1)
-                    }
-                }
-            }
-        case .object(let dict):
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(orderedKeys(in: dict), id: \.self) { k in
-                    if let v = dict[k] {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text("\(humanize(k)):")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(dimInk)
-                            renderValue(v, depth: depth + 1)
-                        }
-                    }
-                }
-            }
-        }
     }
 
     /// "action_items" → "Action items"
@@ -591,5 +550,60 @@ private struct DocumentPreviewView: View {
         let s = seconds % 60
         if h > 0 { return String(format: "%dh %dm", h, m) }
         return String(format: "%dm %ds", m, s)
+    }
+}
+
+/// Recursively renders a JSONValue. Lives as its own struct so the recursion
+/// is between two concrete View types (JSONValueView ↔ JSONValueView), not
+/// between an opaque `some View` and itself — SwiftUI's type checker can
+/// resolve that, where it couldn't resolve a recursive @ViewBuilder func.
+private struct JSONValueView: View {
+    let value: JSONValue
+    let inkColor: Color
+    let dimInkColor: Color
+
+    var body: some View {
+        switch value {
+        case .null:
+            Text("—").foregroundStyle(dimInkColor)
+        case .bool(let b):
+            Text(b ? "Yes" : "No").foregroundStyle(inkColor)
+        case .int(let i):
+            Text(String(i)).foregroundStyle(inkColor)
+        case .double(let d):
+            Text(String(d)).foregroundStyle(inkColor)
+        case .string(let s):
+            Text(s)
+                .font(.system(.body, design: .serif))
+                .foregroundStyle(inkColor)
+                .textSelection(.enabled)
+        case .array(let items):
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("•").foregroundStyle(dimInkColor)
+                        JSONValueView(value: item, inkColor: inkColor, dimInkColor: dimInkColor)
+                    }
+                }
+            }
+        case .object(let dict):
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(dict.keys.sorted(), id: \.self) { k in
+                    if let v = dict[k] {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("\(humanize(k)):")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(dimInkColor)
+                            JSONValueView(value: v, inkColor: inkColor, dimInkColor: dimInkColor)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func humanize(_ key: String) -> String {
+        let spaced = key.replacingOccurrences(of: "_", with: " ")
+        return spaced.prefix(1).uppercased() + spaced.dropFirst()
     }
 }
