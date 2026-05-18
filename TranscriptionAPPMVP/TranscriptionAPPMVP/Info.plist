@@ -6,5 +6,11 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<!-- Pre-declares that the app does not use non-exempt encryption.
+	     We only ride on Apple's built-in HTTPS via URLSession; no proprietary
+	     crypto, no OpenSSL, no libsodium, etc. Setting this here means Apple
+	     stops prompting "Missing Compliance" on every TestFlight upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
