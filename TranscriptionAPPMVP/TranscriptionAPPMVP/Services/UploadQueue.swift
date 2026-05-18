@@ -57,20 +57,18 @@ final class UploadQueue: ObservableObject {
             try await upload(item)
             queue.removeFirst()
             saveToDisk()
-            // Process the next item, if any.
             await processNext()
         } catch {
             lastError = error.localizedDescription
-            // Mark the recording row as failed so the user sees it in History
-            // and can retry/delete. We do NOT remove the file — the user might
-            // want to retry manually.
+            // Pop the failed item so the queue can move on. The recording stays
+            // in History marked .failed; user can delete or re-upload from there.
+            queue.removeFirst()
+            saveToDisk()
             try? await SupabaseService.shared.updateRecording(
                 id: item.id,
                 status: .failed,
                 errorMessage: error.localizedDescription
             )
-            // Retry after a short delay, exponential up to a cap.
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
             await processNext()
         }
     }
@@ -82,7 +80,10 @@ final class UploadQueue: ObservableObject {
             ])
         }
 
-        let storagePath = "\(userId.uuidString)/\(item.id.uuidString).m4a"
+        // Storage RLS compares the first folder name (text) against auth.uid()::text,
+        // which Postgres formats as lowercase. Swift's UUID.uuidString defaults to
+        // uppercase, so we lowercase here or RLS rejects the upload.
+        let storagePath = "\(userId.uuidString.lowercased())/\(item.id.uuidString.lowercased()).m4a"
 
         // 1. Insert the placeholder row (idempotent — we use the local id).
         let recording = Recording(
