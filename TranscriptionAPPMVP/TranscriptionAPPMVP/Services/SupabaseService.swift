@@ -177,8 +177,13 @@ final class SupabaseService: ObservableObject {
 
     /// Uploads a PDF blob to the pdf-templates bucket at <user_id>/<id>.pdf
     /// and inserts a matching pdf_templates row carrying the detected field
-    /// names. Returns the inserted row.
-    func uploadTemplate(name: String, pdfData: Data, fieldNames: [String]) async throws -> PdfTemplate {
+    /// names (and their labels, if any). Returns the inserted row.
+    func uploadTemplate(
+        name: String,
+        pdfData: Data,
+        fieldNames: [String],
+        fieldLabels: [String: String]
+    ) async throws -> PdfTemplate {
         guard let userId = currentUserId else {
             throw NSError(domain: "SupabaseService", code: 401, userInfo: [
                 NSLocalizedDescriptionKey: "Not signed in"
@@ -201,6 +206,7 @@ final class SupabaseService: ObservableObject {
             name: name,
             storagePath: storagePath,
             fieldNames: fieldNames,
+            fieldLabels: fieldLabels.isEmpty ? nil : fieldLabels,
             createdAt: Date()
         )
         try await client.from("pdf_templates").insert(row).execute()

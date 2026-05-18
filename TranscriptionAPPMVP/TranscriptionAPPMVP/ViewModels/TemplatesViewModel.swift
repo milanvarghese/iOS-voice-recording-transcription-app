@@ -27,10 +27,15 @@ final class TemplatesViewModel: ObservableObject {
             if didStartAccess { fileURL.stopAccessingSecurityScopedResource() }
         }
 
-        let fields = PdfFormFiller.extractFieldNames(from: fileURL)
+        let fields = PdfFormFiller.extractFields(from: fileURL)
         guard !fields.isEmpty else {
             errorMessage = "That PDF has no fillable form fields. Templates need annotation-level fields (use Acrobat / Preview to add them)."
             return nil
+        }
+
+        let fieldNames = fields.map(\.name)
+        let fieldLabels: [String: String] = fields.reduce(into: [:]) { acc, f in
+            if let label = f.label, !label.isEmpty { acc[f.name] = label }
         }
 
         do {
@@ -38,7 +43,8 @@ final class TemplatesViewModel: ObservableObject {
             let template = try await SupabaseService.shared.uploadTemplate(
                 name: name,
                 pdfData: data,
-                fieldNames: fields
+                fieldNames: fieldNames,
+                fieldLabels: fieldLabels
             )
             templates.insert(template, at: 0)
             return template

@@ -91,6 +91,7 @@ create table public.pdf_templates (
   name          text not null,
   storage_path  text not null,     -- "<user_id>/<template_id>.pdf" in pdf-templates bucket
   field_names   jsonb,             -- ["full_name","date_of_birth",...]
+  field_labels  jsonb,             -- {"Text1":"Patient's full name", ...}; null when none
   created_at    timestamptz not null default now()
 );
 
