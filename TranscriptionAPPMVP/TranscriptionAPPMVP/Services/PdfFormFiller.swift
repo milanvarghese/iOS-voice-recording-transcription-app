@@ -63,6 +63,14 @@ enum PdfFormFiller {
                 guard let name = annotation.fieldName,
                       let value = mapping[name],
                       !value.isEmpty else { continue }
+                // Long-value safety. Templates often ship text widgets as
+                // single-line with a MaxLen cap, which truncates paragraph
+                // content at write-time and clips what does fit at the box
+                // edge. Forcing multi-line + unlimited length is safe for
+                // short fields (renders identically) and lets long values
+                // wrap inside the available box.
+                annotation.isMultiline = true
+                annotation.maximumLength = Int.max
                 // Preferred API for text-field values. Also clears the
                 // pre-baked empty appearance stream so the new value displays.
                 annotation.widgetStringValue = value

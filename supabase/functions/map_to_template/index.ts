@@ -43,6 +43,11 @@ Return a single JSON object whose keys EXACTLY match each field's "name", and wh
   - Numbers → numerals as strings, e.g., "26".
   - Lists → join with ", " or "; " as appropriate for a single form field.
   - Booleans → "Yes" / "No".
+- LENGTH-MATCH the value to the kind of field:
+  - Short fields (Name, Date, City, Phone, Email, Age, etc.) → 1 to 8 words. Never paste paragraph content here.
+  - Medium fields (Address, Diagnosis, Reason for visit) → 1-2 sentences, no longer.
+  - Long fields (Notes, Summary, Description, Chief complaint, Plan) → a concise 2-4 sentence paragraph that captures the essential points. Do NOT paste the full transcript; the form has limited visible space and the user wants a readable summary, not a dump.
+- Prefer the user's actual phrasing from the transcript where the wording carries meaning; otherwise summarize in clear neutral English.
 - If, after considering the label/name and all source data, a field truly has no value, return an empty string. NEVER invent.
 - Keys in the output JSON must EXACTLY match the "name" values provided. Don't add, rename, or drop keys.
 - Return ONLY the JSON object — no markdown fences, no commentary, no preamble.`;
