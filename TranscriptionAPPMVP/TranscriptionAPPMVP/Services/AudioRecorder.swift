@@ -13,8 +13,10 @@ import UIKit
 /// 2. AVAudioRecorder writes M4A to disk continuously. We do not buffer in memory.
 ///    If the OS kills the app, the partial file remains on disk and `pendingRecording()`
 ///    will return it on next launch ↦ prevents "recording lost after pause/close"
-///    (concern #2) and "recording in progress but timer at zero" (concern #5,
-///    because the timer is bound to `recorder.currentTime`).
+///    (concern #2). The displayed timer is derived from
+///    `recorder.currentTime` plus a `elapsedBeforeCurrentSegment` accumulator,
+///    because currentTime resets to 0 whenever iOS rotates the record session
+///    around an interruption (concern #5, "recording in progress but timer at zero").
 /// 3. We subscribe to `AVAudioSession.interruptionNotification` and handle phone
 ///    calls / Siri / other audio apps grabbing the mic by auto-resuming on
 ///    `.ended`. ↦ prevents "switching apps fails the recording" (concern #8).
@@ -46,6 +48,29 @@ final class AudioRecorder: NSObject, ObservableObject {
     /// vs from an iOS interruption (phone call, Siri, alarm). If the user
     /// paused, an incoming call followed by call-end should NOT auto-resume.
     private var pausedByUser = false
+
+    // MARK: - Segmented duration accounting
+    //
+    // AVAudioRecorder.currentTime reports the position within the *current
+    // record segment*, not the total file duration. When iOS interrupts the
+    // recorder (phone call), the segment effectively ends; calling record()
+    // again starts a fresh segment at 0 — but the M4A on disk keeps being
+    // appended to, so file duration > currentTime. Without bookkeeping the
+    // visible timer would reset to 00:00 after every call interruption even
+    // though the recording itself is fine.
+    //
+    // elapsedBeforeCurrentSegment: sum of all completed segments' durations
+    // maxCurrentTimeInSegment:     largest currentTime we've observed in
+    //                              the live segment (monotonic — we never
+    //                              show the clock running backwards)
+    // displayed elapsedSeconds = elapsedBeforeCurrentSegment + maxCurrentTimeInSegment
+    //
+    // When the metering tick sees currentTime jump backwards (typical sign
+    // of a new segment after an iOS interruption), we roll
+    // maxCurrentTimeInSegment into elapsedBeforeCurrentSegment and reset the
+    // segment-max to the new value.
+    private var elapsedBeforeCurrentSegment: TimeInterval = 0
+    private var maxCurrentTimeInSegment: TimeInterval = 0
     /// UIKit background task we request during interruptions so iOS gives us
     /// a few extra seconds of guaranteed runtime instead of suspending us the
     /// moment the call audio takes over.
@@ -103,6 +128,8 @@ final class AudioRecorder: NSObject, ObservableObject {
         self.isRecording = true
         self.isPaused = false
         self.elapsedSeconds = 0
+        self.elapsedBeforeCurrentSegment = 0
+        self.maxCurrentTimeInSegment = 0
         self.lastError = nil
         UIApplication.shared.isIdleTimerDisabled = true
 
@@ -119,6 +146,12 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     func pause() {
         guard isRecording, !isPaused, let recorder else { return }
+        // Freeze the displayed elapsed time at the moment of pause so the UI
+        // doesn't jitter if AVAudioRecorder.currentTime starts reporting 0
+        // while paused on some iOS versions.
+        let ct = recorder.currentTime
+        maxCurrentTimeInSegment = max(maxCurrentTimeInSegment, ct)
+        elapsedSeconds = elapsedBeforeCurrentSegment + maxCurrentTimeInSegment
         recorder.pause()
         isPaused = true
         pausedByUser = true
@@ -140,7 +173,12 @@ final class AudioRecorder: NSObject, ObservableObject {
         guard let recorder, let fileURL = currentFileURL, let id = currentRecordingId else {
             return nil
         }
-        let duration = Int(recorder.currentTime)
+        // Duration is the sum of all segments completed before plus the
+        // largest currentTime we observed in the live segment. We don't trust
+        // recorder.currentTime alone — if Stop is tapped while iOS-paused,
+        // it can return 0.
+        let segmentDuration = max(maxCurrentTimeInSegment, recorder.currentTime)
+        let duration = Int(elapsedBeforeCurrentSegment + segmentDuration)
         recorder.stop()
         finishCleanup()
         return PendingRecording(
@@ -169,6 +207,8 @@ final class AudioRecorder: NSObject, ObservableObject {
         isPaused = false
         pausedByUser = false
         elapsedSeconds = 0
+        elapsedBeforeCurrentSegment = 0
+        maxCurrentTimeInSegment = 0
         audioLevel = 0
         levelTimer?.invalidate()
         levelTimer = nil
@@ -279,7 +319,17 @@ final class AudioRecorder: NSObject, ObservableObject {
         self.isRecording = true
         self.isPaused = false
         self.pausedByUser = false
-        self.elapsedSeconds = recorder.currentTime
+        // Seed the accumulator with the existing M4A's duration so the timer
+        // resumes from where the interrupted recording left off rather than
+        // starting back at 00:00.
+        let existingDuration: TimeInterval = {
+            let asset = AVURLAsset(url: fileURL)
+            let seconds = CMTimeGetSeconds(asset.duration)
+            return seconds.isFinite && seconds > 0 ? seconds : TimeInterval(orphan.durationSeconds)
+        }()
+        self.elapsedBeforeCurrentSegment = existingDuration
+        self.maxCurrentTimeInSegment = 0
+        self.elapsedSeconds = existingDuration
         self.lastError = nil
         UIApplication.shared.isIdleTimerDisabled = true
 
@@ -314,8 +364,11 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     // MARK: - Metering / live timer
 
-    /// The timer is driven by AVAudioRecorder.currentTime — NEVER a separate counter.
-    /// This guarantees the UI timer can't disagree with what's actually on disk.
+    /// The displayed timer is derived from AVAudioRecorder.currentTime so it
+    /// can't drift from what's actually on disk — but currentTime resets to
+    /// 0 every time iOS starts a new record segment (notably after a phone
+    /// call interruption). We accumulate completed segments into
+    /// elapsedBeforeCurrentSegment and only ever show a monotonic clock.
     /// (Concern #5: "recording in progress but timer at zero".)
     private func startMetering() {
         levelTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
@@ -325,7 +378,19 @@ final class AudioRecorder: NSObject, ObservableObject {
                 let db = recorder.averagePower(forChannel: 0)
                 let normalized = max(0, (db + 60) / 60)
                 self.audioLevel = normalized
-                self.elapsedSeconds = recorder.currentTime
+
+                let ct = recorder.currentTime
+                // A rewind by >0.3s means AVAudioRecorder rotated into a new
+                // segment (typical after an iOS-initiated pause/resume around
+                // a phone call). Roll the previous segment's peak into the
+                // accumulator and start measuring the new segment from ct.
+                if ct + 0.3 < self.maxCurrentTimeInSegment {
+                    self.elapsedBeforeCurrentSegment += self.maxCurrentTimeInSegment
+                    self.maxCurrentTimeInSegment = ct
+                } else {
+                    self.maxCurrentTimeInSegment = max(self.maxCurrentTimeInSegment, ct)
+                }
+                self.elapsedSeconds = self.elapsedBeforeCurrentSegment + self.maxCurrentTimeInSegment
                 // Update the Notification Center status (re-post is no-op
                 // unless the body string actually changed; the manager handles
                 // that so we don't spam the system).
@@ -365,6 +430,15 @@ final class AudioRecorder: NSObject, ObservableObject {
 
         switch type {
         case .began:
+            // Snapshot the segment progress NOW, before iOS yanks the audio
+            // session — once that happens, currentTime can start returning 0
+            // and we'd lose the live segment's contribution to the displayed
+            // timer.
+            if let r = recorder {
+                let ct = r.currentTime
+                maxCurrentTimeInSegment = max(maxCurrentTimeInSegment, ct)
+                elapsedSeconds = elapsedBeforeCurrentSegment + maxCurrentTimeInSegment
+            }
             isPaused = true
             // Beg iOS for a few more seconds of runtime in case the call drags
             // on. iOS gives us ~30s — better than nothing. For longer calls,
