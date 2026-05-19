@@ -29,8 +29,9 @@ import UIKit
 ///   iOS rotating the record session around an interruption.
 /// - #6 "two recording sessions cancel each other out": single shared instance
 ///   plus the `isRecording` guard.
-/// - #8 "switching apps fails the recording": interruption handler rotates to
-///   a new segment file and auto-resumes when iOS reactivates the session.
+/// - #8 "switching apps fails the recording": interruption handler closes
+///   the live segment cleanly and stays paused. The user resumes
+///   explicitly — a phone call shouldn't silently re-arm the mic.
 @MainActor
 final class AudioRecorder: NSObject, ObservableObject {
     static let shared = AudioRecorder()
@@ -620,18 +621,12 @@ final class AudioRecorder: NSObject, ObservableObject {
             // orphan recovery on next launch is the safety net.
             beginInterruptionBackgroundTask()
         case .ended:
-            defer { endInterruptionBackgroundTask() }
-            guard let optsRaw = info[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
-            let opts = AVAudioSession.InterruptionOptions(rawValue: optsRaw)
-            guard opts.contains(.shouldResume),
-                  !pausedByUser,
-                  isRecording else { return }
-            try? AVAudioSession.sharedInstance().setActive(true, options: [])
-            if startNewSegment() {
-                isPaused = false
-            }
-            // If startNewSegment fails the user stays paused; they can tap
-            // Resume to retry or Stop & Save to keep what they already have.
+            // Deliberately do NOT auto-resume the recording. After a call the
+            // user may have walked away, switched contexts, or wants to wrap
+            // up — silently picking the mic back up surprises people. We
+            // stay paused and surface Resume / Stop & Save / Discard in the
+            // UI so resuming is an explicit choice.
+            endInterruptionBackgroundTask()
         @unknown default: break
         }
     }
