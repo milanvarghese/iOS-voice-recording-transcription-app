@@ -20,6 +20,8 @@ struct RecordingView: View {
                 // user always knows whether they're capturing audio or paused.
                 if vm.isRecording {
                     statusBadge
+                } else if vm.isFinalizing {
+                    finalizingBadge
                 }
 
                 // Big timer — bound to AVAudioRecorder.currentTime, never a
@@ -136,6 +138,19 @@ struct RecordingView: View {
     private var timerColor: Color {
         guard vm.isRecording else { return .primary }
         return vm.isPaused ? .secondary : .red
+    }
+
+    private var finalizingBadge: some View {
+        HStack(spacing: 8) {
+            ProgressView().tint(.blue)
+            Text("SAVING")
+                .font(.caption.weight(.semibold))
+                .tracking(1.5)
+                .foregroundStyle(.blue)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(Color.blue.opacity(0.12), in: Capsule())
     }
 
     private var statusBadge: some View {

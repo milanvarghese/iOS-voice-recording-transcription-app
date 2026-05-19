@@ -75,7 +75,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             case RecordingNotificationManager.resumeActionId:
                 AudioRecorder.shared.resume()
             case RecordingNotificationManager.stopActionId:
-                if let pending = AudioRecorder.shared.stop() {
+                if let pending = await AudioRecorder.shared.stop() {
                     UploadQueue.shared.enqueue(pending)
                 }
             default:

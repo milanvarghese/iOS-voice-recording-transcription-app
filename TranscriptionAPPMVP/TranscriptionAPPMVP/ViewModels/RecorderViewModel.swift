@@ -12,6 +12,7 @@ final class RecorderViewModel: ObservableObject {
 
     var isRecording: Bool { recorder.isRecording }
     var isPaused: Bool { recorder.isPaused }
+    var isFinalizing: Bool { recorder.isFinalizing }
     var elapsedSeconds: TimeInterval { recorder.elapsedSeconds }
     var audioLevel: Float { recorder.audioLevel }
     var pendingOrphan: PendingRecording? { recorder.pendingOrphan }
@@ -40,9 +41,14 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func stopAndUpload() {
-        guard let pending = recorder.stop() else { return }
-        lastStoppedRecordingId = pending.id
-        uploads.enqueue(pending)
+        // Stop is async because it concatenates segment files into a single
+        // M4A. While that runs, recorder.isFinalizing is true so the view
+        // can show a "Saving…" state.
+        Task { @MainActor in
+            guard let pending = await recorder.stop() else { return }
+            lastStoppedRecordingId = pending.id
+            uploads.enqueue(pending)
+        }
     }
 
     func discard() {
