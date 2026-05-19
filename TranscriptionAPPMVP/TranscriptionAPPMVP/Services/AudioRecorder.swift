@@ -75,6 +75,11 @@ final class AudioRecorder: NSObject, ObservableObject {
     /// a few extra seconds of guaranteed runtime instead of suspending us the
     /// moment the call audio takes over.
     private var interruptionTaskID: UIBackgroundTaskIdentifier = .invalid
+    /// True after handleInterruption(.began) has stopped the current
+    /// AVAudioRecorder. The instance can't be safely reused — resume must
+    /// create a NEW AVAudioRecorder on the same URL (which appends to the
+    /// existing M4A).
+    private var needsRecorderRecreation = false
 
     /// UserDefaults key for the in-progress recording marker. See
     /// `InProgressRecording` for why this exists.
@@ -130,6 +135,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         self.elapsedSeconds = 0
         self.elapsedBeforeCurrentSegment = 0
         self.maxCurrentTimeInSegment = 0
+        self.needsRecorderRecreation = false
         self.lastError = nil
         UIApplication.shared.isIdleTimerDisabled = true
 
@@ -159,8 +165,23 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     func resume() {
-        guard isRecording, isPaused, let recorder else { return }
+        guard isRecording, isPaused else { return }
         try? AVAudioSession.sharedInstance().setActive(true, options: [])
+        // If the previous recorder was torn down by an interruption, we
+        // must reopen the file with a fresh AVAudioRecorder — reusing the
+        // old instance can overwrite the M4A's existing audio.
+        if needsRecorderRecreation {
+            if recreateRecorderForAppend() {
+                isPaused = false
+                pausedByUser = false
+                needsRecorderRecreation = false
+                RecordingNotificationManager.shared.showRecordingStatus(elapsedSeconds: elapsedSeconds, isPaused: false)
+            } else {
+                lastError = "Could not resume after interruption. Stop & Save to keep what's recorded so far."
+            }
+            return
+        }
+        guard let recorder else { return }
         if recorder.record() {
             isPaused = false
             pausedByUser = false
@@ -168,18 +189,53 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
+    /// Constructs a brand-new AVAudioRecorder on the existing currentFileURL
+    /// and starts recording. Because the URL already has audio, AVAudioRecorder
+    /// appends — this is the same trick `resumeOrphan` uses, generalized to
+    /// the mid-session interruption case. Returns false on any failure.
+    private func recreateRecorderForAppend() -> Bool {
+        guard let fileURL = currentFileURL else { return false }
+        // Encoder settings must match start() exactly — AVAudioRecorder
+        // refuses to append onto a file whose format doesn't line up.
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: 44_100,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
+            AVEncoderBitRateKey: 64_000
+        ]
+        guard let newRecorder = try? AVAudioRecorder(url: fileURL, settings: settings) else {
+            return false
+        }
+        newRecorder.delegate = self
+        newRecorder.isMeteringEnabled = true
+        guard newRecorder.prepareToRecord(), newRecorder.record() else {
+            return false
+        }
+        self.recorder = newRecorder
+        // Live segment starts at 0 again; the accumulator already holds the
+        // pre-interruption duration thanks to handleInterruption(.began).
+        self.maxCurrentTimeInSegment = 0
+        return true
+    }
+
     /// Stop and finalize. Returns a PendingRecording the caller can hand to UploadQueue.
+    /// Works whether or not we currently have an AVAudioRecorder: during a
+    /// phone-call interruption the recorder is torn down, but the M4A on disk
+    /// is still valid and `elapsedBeforeCurrentSegment` already holds the
+    /// captured duration, so the user can Stop & Save what they have.
     func stop() -> PendingRecording? {
-        guard let recorder, let fileURL = currentFileURL, let id = currentRecordingId else {
+        guard let fileURL = currentFileURL, let id = currentRecordingId else {
             return nil
         }
-        // Duration is the sum of all segments completed before plus the
-        // largest currentTime we observed in the live segment. We don't trust
-        // recorder.currentTime alone — if Stop is tapped while iOS-paused,
-        // it can return 0.
-        let segmentDuration = max(maxCurrentTimeInSegment, recorder.currentTime)
+        let segmentDuration: TimeInterval
+        if let recorder {
+            segmentDuration = max(maxCurrentTimeInSegment, recorder.currentTime)
+            recorder.stop()
+        } else {
+            segmentDuration = maxCurrentTimeInSegment
+        }
         let duration = Int(elapsedBeforeCurrentSegment + segmentDuration)
-        recorder.stop()
         finishCleanup()
         return PendingRecording(
             id: id,
@@ -209,6 +265,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         elapsedSeconds = 0
         elapsedBeforeCurrentSegment = 0
         maxCurrentTimeInSegment = 0
+        needsRecorderRecreation = false
         audioLevel = 0
         levelTimer?.invalidate()
         levelTimer = nil
@@ -329,6 +386,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         }()
         self.elapsedBeforeCurrentSegment = existingDuration
         self.maxCurrentTimeInSegment = 0
+        self.needsRecorderRecreation = false
         self.elapsedSeconds = existingDuration
         self.lastError = nil
         UIApplication.shared.isIdleTimerDisabled = true
@@ -431,14 +489,24 @@ final class AudioRecorder: NSObject, ObservableObject {
         switch type {
         case .began:
             // Snapshot the segment progress NOW, before iOS yanks the audio
-            // session — once that happens, currentTime can start returning 0
-            // and we'd lose the live segment's contribution to the displayed
+            // session — once that happens, currentTime starts returning 0 and
+            // we'd lose the live segment's contribution to the displayed
             // timer.
             if let r = recorder {
                 let ct = r.currentTime
                 maxCurrentTimeInSegment = max(maxCurrentTimeInSegment, ct)
-                elapsedSeconds = elapsedBeforeCurrentSegment + maxCurrentTimeInSegment
+                // Finalize the M4A on disk and roll the segment into the
+                // accumulator. We drop the AVAudioRecorder instance entirely;
+                // reusing it after iOS has taken the audio session away can
+                // overwrite the existing audio when record() is called again,
+                // which is the data-loss path the user kept hitting on calls.
+                r.stop()
+                elapsedBeforeCurrentSegment += maxCurrentTimeInSegment
+                maxCurrentTimeInSegment = 0
+                elapsedSeconds = elapsedBeforeCurrentSegment
             }
+            recorder = nil
+            needsRecorderRecreation = true
             isPaused = true
             // Beg iOS for a few more seconds of runtime in case the call drags
             // on. iOS gives us ~30s — better than nothing. For longer calls,
@@ -453,10 +521,16 @@ final class AudioRecorder: NSObject, ObservableObject {
             let opts = AVAudioSession.InterruptionOptions(rawValue: optsRaw)
             guard opts.contains(.shouldResume),
                   !pausedByUser,
-                  let recorder,
                   isRecording else { return }
             try? AVAudioSession.sharedInstance().setActive(true, options: [])
-            if recorder.record() {
+            // Build a fresh recorder on the same URL — appends to the M4A,
+            // preserving everything captured before the call.
+            if needsRecorderRecreation, recreateRecorderForAppend() {
+                isPaused = false
+                needsRecorderRecreation = false
+            } else if let recorder, recorder.record() {
+                // Defensive: if .began somehow didn't run (rare), fall back
+                // to plain pause/resume semantics on the existing recorder.
                 isPaused = false
             }
         @unknown default: break
